@@ -5,13 +5,18 @@ from typing import Any, Dict, List, Optional
 import httpx
 from app.core.config import get_settings
 from app.models.analysis import (
+    BeginnerExplanation,
+    BiasDirection,
     CandlestickPattern,
     DecisionType,
     IndicatorSnapshot,
     LiquidityAnalysisResult,
     MarketStructureResult,
     MultiTimeframeResult,
+    PatternStory,
     SetupScoreResult,
+    SignalStatus,
+    SimpleTradePlan,
     TradeExplanation,
     TradeLevels,
 )
@@ -296,3 +301,220 @@ async def _call_llm_provider(provider: str, prompt: str, settings: Any) -> Optio
             resp.raise_for_status()
             return json.loads(resp.json()["response"])
     return None
+
+
+def build_beginner_explanation(
+    symbol: str,
+    timeframe: str,
+    signal_status: SignalStatus,
+    decision: DecisionType,
+    decision_reason: str,
+    patterns: List[CandlestickPattern],
+    structure: MarketStructureResult,
+    liquidity: LiquidityAnalysisResult,
+    indicators: IndicatorSnapshot,
+    mtf: MultiTimeframeResult,
+    levels: TradeLevels,
+    confirmations_met: List[str],
+    confirmations_missing: List[str],
+) -> BeginnerExplanation:
+    """Build beginner-friendly plain-English summary strictly from computed market metrics."""
+    why_bullets: List[str] = []
+
+    if signal_status in (SignalStatus.BUY_SIGNAL, SignalStatus.SELL_SIGNAL):
+        is_buy = signal_status == SignalStatus.BUY_SIGNAL
+        headline = f"{'BUY' if is_buy else 'SELL'} SETUP DETECTED"
+
+        if "bullish" in indicators.ema_alignment or "bearish" in indicators.ema_alignment:
+            why_bullets.append(
+                f"The market is showing short-term {'bullish (upward)' if is_buy else 'bearish (downward)'} momentum."
+            )
+        if patterns:
+            top = patterns[0]
+            why_bullets.append(f"A {top.name.lower()} candle pattern was detected.")
+        if structure.bias in (BiasDirection.BULLISH, BiasDirection.BEARISH):
+            why_bullets.append(
+                f"The market price pattern (structure) supports a possible {'upward' if is_buy else 'downward'} move."
+            )
+        if liquidity.support_resistance or liquidity.sweep_events or liquidity.pullback_retest_status != "none":
+            zone_word = "support (price floor)" if is_buy else "resistance (price ceiling)"
+            why_bullets.append(f"Price reacted near an important {zone_word} zone.")
+        if not mtf.has_conflict:
+            why_bullets.append("The bigger-picture chart timeframe agrees with this direction.")
+        if levels.risk_reward_tp1:
+            why_bullets.append(
+                f"The potential profit is {levels.risk_reward_tp1:.2f}x larger than the stop-loss risk."
+            )
+
+        what_it_means = (
+            f"{'Buyers' if is_buy else 'Sellers'} are currently showing signs of strength on {symbol} ({timeframe}). "
+            f"The AI has found conditions that may support a price {'increase' if is_buy else 'drop'}, "
+            "but no trade is ever guaranteed—always stick to the Stop Loss."
+        )
+        return BeginnerExplanation(
+            headline=headline,
+            why_bullets=why_bullets,
+            what_it_means=what_it_means,
+            confirmations_met=confirmations_met,
+            confirmations_missing=confirmations_missing,
+            no_trade_category=None,
+        )
+
+    # Non-trade / Wait / Low Quality / Data Unavailable explanations
+    no_trade_cat = "NO TRADE"
+    if signal_status == SignalStatus.DATA_UNAVAILABLE:
+        no_trade_cat = "DATA UNAVAILABLE"
+        headline = "DATA UNAVAILABLE"
+        what_it_means = (
+            "The market data is missing or outdated. The AI cannot generate a reliable analysis until fresh prices arrive."
+        )
+    elif decision == DecisionType.WAIT:
+        no_trade_cat = "WAIT"
+        headline = "WAIT FOR CONFIRMATION"
+        if levels.requires_confirmation:
+            what_it_means = (
+                "A potential setup has started forming, but the required confirmation candle or breakout has not finished yet. Wait before acting."
+            )
+        elif mtf.has_conflict:
+            what_it_means = (
+                "The shorter and longer charts disagree on direction right now. Waiting avoids getting caught in a tug-of-war."
+            )
+        else:
+            what_it_means = (
+                "Conditions are developing, but one or more confirmation checks are still missing. Patience protects your capital."
+            )
+    elif levels.rejection_reasons and any("risk/reward" in r.lower() for r in levels.rejection_reasons):
+        no_trade_cat = "LOW QUALITY SETUP"
+        headline = "LOW QUALITY SETUP — NO TRADE"
+        what_it_means = (
+            "The potential reward compared with the risk is below your configured minimum. Skipping low-reward trades protects your account."
+        )
+    else:
+        headline = "NO TRADE — CONDITIONS UNCLEAR"
+        what_it_means = (
+            "Market conditions are unclear or choppy, and the trend and price structure do not give a clean edge. The AI is staying on the sidelines."
+        )
+
+    if patterns:
+        why_bullets.append(f"Recent candle pattern seen: {patterns[0].name} ({patterns[0].classification.value}).")
+    why_bullets.append(f"Current chart trend/structure: {structure.bias.value} ({structure.regime.replace('_', ' ')}).")
+    if mtf.has_conflict:
+        why_bullets.append("Different chart timeframes currently disagree.")
+    for m in confirmations_missing[:3]:
+        why_bullets.append(f"Missing check: {m}.")
+    if not why_bullets:
+        why_bullets.append(decision_reason)
+
+    return BeginnerExplanation(
+        headline=headline,
+        why_bullets=why_bullets,
+        what_it_means=what_it_means,
+        confirmations_met=confirmations_met,
+        confirmations_missing=confirmations_missing,
+        no_trade_category=no_trade_cat,
+    )
+
+
+def build_pattern_story(
+    patterns: List[CandlestickPattern],
+    structure: MarketStructureResult,
+    indicators: IndicatorSnapshot,
+) -> PatternStory:
+    """Create a plain-language story explaining the detected candlestick pattern."""
+    if not patterns:
+        return PatternStory(
+            detected=False,
+            pattern_name="No decisive candle pattern",
+            direction="neutral",
+            candles_involved=[],
+            what_happened="Recent candles did not form a clear reversal or momentum candlestick pattern.",
+            why_considered="Without a clear candle signal, price direction remains unconfirmed by bar shape.",
+            confirmation_found="None yet — waiting for a stronger closing candle.",
+            what_makes_it_fail="Sideways choppy bars inside a tight range.",
+        )
+
+    p = patterns[0]
+    ts_list = [ts.strftime("%Y-%m-%d %H:%M UTC") for ts in p.timestamps]
+    is_bull = p.classification == BiasDirection.BULLISH
+    is_bear = p.classification == BiasDirection.BEARISH
+
+    if "Engulfing" in p.name:
+        what_happened = (
+            f"The previous candle showed {'selling' if is_bull else 'buying'} pressure. "
+            f"The latest {'bullish' if is_bull else 'bearish'} candle completely covered the prior candle's body, "
+            f"suggesting {'buyers' if is_bull else 'sellers'} may be taking control."
+        )
+    elif "Hammer" in p.name or "Pin Bar" in p.name or "Shooting Star" in p.name:
+        what_happened = (
+            f"Price pushed {'down' if is_bull else 'up'} sharply during the candle, but "
+            f"{'buyers' if is_bull else 'sellers'} rejected that move and pushed price back before the candle closed, leaving a long tail."
+        )
+    elif "Doji" in p.name:
+        what_happened = (
+            "Buyers and sellers fought to a standstill, so the candle opened and closed at nearly the same price."
+        )
+    else:
+        what_happened = p.explanation
+
+    why_considered = (
+        f"The candle pattern is evaluated alongside the overall trend ({indicators.ema_alignment.replace('_', ' ')}) "
+        f"and market structure ({structure.bias.value})."
+    )
+    return PatternStory(
+        detected=True,
+        pattern_name=p.name,
+        direction=p.classification.value,
+        candles_involved=ts_list,
+        what_happened=what_happened,
+        why_considered=why_considered,
+        confirmation_found="; ".join(p.confirmation_conditions) or "Candle close completed",
+        what_makes_it_fail="; ".join(p.invalidation_conditions) or "Price breaking the opposite side of the pattern",
+    )
+
+
+def build_simple_trade_plan(
+    decision: DecisionType,
+    levels: TradeLevels,
+    decimals: int = 5,
+) -> SimpleTradePlan:
+    """Create an easy-to-read Trade Plan with beginner SL and target explanations."""
+    if levels.entry_price is None or levels.stop_loss is None or levels.take_profit_1 is None:
+        return SimpleTradePlan(
+            direction="NONE",
+            why_stop_loss_here="No Stop Loss calculated because there is no qualified setup.",
+            why_targets_selected="No targets set until valid market structure and risk/reward levels appear.",
+        )
+
+    fmt = lambda v: f"{v:.{decimals}f}" if v is not None else "N/A"
+    direction_label = (
+        "BUY"
+        if decision == DecisionType.BUY_SETUP or levels.direction == BiasDirection.BULLISH
+        else ("SELL" if decision == DecisionType.SELL_SETUP or levels.direction == BiasDirection.BEARISH else "NONE")
+    )
+
+    entry_str = fmt(levels.entry_price)
+    if levels.entry_zone_low is not None and levels.entry_zone_high is not None:
+        entry_str = f"{fmt(levels.entry_price)} (Zone: {fmt(levels.entry_zone_low)} – {fmt(levels.entry_zone_high)})"
+
+    why_sl = (
+        f"If price reaches {fmt(levels.stop_loss)}, the recent price floor/ceiling is broken and the trade idea is wrong. "
+        f"({levels.stop_loss_explanation})"
+    )
+    why_tp = (
+        f"Targets are placed at nearby price floors/ceilings where buyers or sellers often pause or take profits: "
+        f"TP1 ({levels.tp1_explanation})"
+        + (f" TP2 ({levels.tp2_explanation})" if levels.take_profit_2 else "")
+    )
+
+    return SimpleTradePlan(
+        direction=direction_label,
+        entry_display=entry_str,
+        stop_loss_display=fmt(levels.stop_loss),
+        tp1_display=fmt(levels.take_profit_1),
+        tp2_display=fmt(levels.take_profit_2),
+        tp3_display=fmt(levels.take_profit_3),
+        risk_reward_display=f"{levels.risk_reward_tp1:.2f} : 1" if levels.risk_reward_tp1 else "N/A",
+        why_stop_loss_here=why_sl,
+        why_targets_selected=why_tp,
+    )
+

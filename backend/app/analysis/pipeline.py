@@ -3,8 +3,17 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
-from app.analysis.decision import evaluate_trade_decision
-from app.analysis.explanation import generate_trade_explanation
+from app.analysis.decision import (
+    evaluate_confirmations,
+    evaluate_trade_decision,
+    map_decision_to_signal_status,
+)
+from app.analysis.explanation import (
+    build_beginner_explanation,
+    build_pattern_story,
+    build_simple_trade_plan,
+    generate_trade_explanation,
+)
 from app.analysis.liquidity import analyze_liquidity_and_levels
 from app.analysis.mtf import evaluate_multi_timeframe, select_mtf_roles
 from app.analysis.scoring import determine_candidate_direction, score_trade_setup
@@ -22,6 +31,7 @@ from app.models.journal import JournalEntry, NotificationItem, PaperAccountSumma
 from app.models.market import DataConnectionStatus, OHLCVCandle, Timeframe
 from app.patterns.engine import detect_candlestick_patterns
 from app.risk.levels import calculate_trade_levels
+from app.services.signals import record_signal_from_report
 from app.structure.engine import analyze_market_structure
 
 
@@ -110,6 +120,18 @@ async def run_full_analysis(
         thresholds_cfg=settings.scoring_thresholds,
     )
 
+    confirmations_met, confirmations_missing = evaluate_confirmations(
+        candidate_dir=candidate_dir,
+        structure=structure,
+        patterns=patterns,
+        liquidity=liquidity,
+        indicators=indicators,
+        mtf=mtf,
+        levels=levels,
+        risk_settings=settings.risk,
+        confirmations=settings.confirmations,
+    )
+
     decision, decision_reason, risk_warnings = evaluate_trade_decision(
         candidate_dir=candidate_dir,
         integrity=primary_resp.integrity,
@@ -121,7 +143,38 @@ async def run_full_analysis(
         news_blackout_active=news_blackout_active,
         news_blackout_reason=news_blackout_reason,
         is_demo=primary_resp.overview.is_demo,
+        confirmations=settings.confirmations,
+        structure=structure,
+        patterns=patterns,
+        liquidity=liquidity,
+        indicators=indicators,
     )
+
+    signal_status = map_decision_to_signal_status(
+        decision=decision,
+        score_value=score.total_score,
+        min_score=settings.risk.min_setup_score,
+        confirmations_missing=confirmations_missing,
+        data_unavailable=False,
+    )
+
+    beginner_exp = build_beginner_explanation(
+        symbol=norm_symbol,
+        timeframe=timeframe.value,
+        signal_status=signal_status,
+        decision=decision,
+        decision_reason=decision_reason,
+        patterns=patterns,
+        structure=structure,
+        liquidity=liquidity,
+        indicators=indicators,
+        mtf=mtf,
+        levels=levels,
+        confirmations_met=confirmations_met,
+        confirmations_missing=confirmations_missing,
+    )
+    pattern_story = build_pattern_story(patterns, structure, indicators)
+    simple_plan = build_simple_trade_plan(decision, levels, decimals=decimals)
 
     probability = probability_manager.predict(candles)
     explanation = await generate_trade_explanation(
@@ -163,6 +216,7 @@ async def run_full_analysis(
     now = datetime.now(timezone.utc)
     report = TradeAnalysisReport(
         analysis_id=analysis_id,
+        signal_status=signal_status,
         created_at=now,
         symbol=norm_symbol,
         provider=primary_resp.overview.data_source,
@@ -183,12 +237,26 @@ async def run_full_analysis(
         trade_levels=levels,
         probability=probability,
         explanation=explanation,
+        beginner_explanation=beginner_exp,
+        pattern_story=pattern_story,
+        simple_trade_plan=simple_plan,
         final_decision=decision,
         decision_reason=decision_reason,
         risk_warnings=risk_warnings,
         facts_summary=facts_summary,
         calculated_findings=calculated_findings,
     )
+
+    sig_record = await record_signal_from_report(
+        report=report,
+        signal_status=signal_status,
+        beginner_exp=beginner_exp,
+        pattern_story=pattern_story,
+        simple_plan=simple_plan,
+        settings=settings,
+    )
+    report.signal_id = sig_record.signal_id
+    report.signal_expires_at = sig_record.expires_at
 
     # Persist analysis and automatic journal entry (including rejected setups)
     await repo.save_analysis(analysis_id, report.model_dump(mode="json"), now.isoformat())

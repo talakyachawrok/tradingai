@@ -4,6 +4,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  BellRing,
   BookOpen,
   BrainCircuit,
   CandlestickChart as ChartIcon,
@@ -21,11 +22,13 @@ import { JournalPage } from './pages/JournalPage'
 import { PaperTradingPage } from './pages/PaperTradingPage'
 import { ProbabilityLabPage } from './pages/ProbabilityLabPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { SignalHistoryPage } from './pages/SignalHistoryPage'
 import { WebhookPage } from './pages/WebhookPage'
 import { api } from './services/api'
 
 type NavTab =
   | 'dashboard'
+  | 'signals'
   | 'journal'
   | 'backtest'
   | 'paper'
@@ -57,6 +60,7 @@ export const App: React.FC = () => {
 
   const navItems: Array<{ id: NavTab; label: string; icon: React.ComponentType<any> }> = [
     { id: 'dashboard', label: 'Market Analyzer', icon: ChartIcon },
+    { id: 'signals', label: 'Trade Signal History', icon: BellRing },
     { id: 'journal', label: 'Trade Journal', icon: BookOpen },
     { id: 'backtest', label: 'Backtesting', icon: BarChart3 },
     { id: 'paper', label: 'Paper Trading', icon: Wallet },
@@ -223,6 +227,7 @@ export const App: React.FC = () => {
               onNotificationRefresh={() => notifQ.refetch()}
             />
           )}
+          {activeTab === 'signals' && <SignalHistoryPage allowDemo={allowDemo} />}
           {activeTab === 'journal' && <JournalPage />}
           {activeTab === 'backtest' && <BacktestPage allowDemo={allowDemo} />}
           {activeTab === 'paper' && <PaperTradingPage allowDemo={allowDemo} />}

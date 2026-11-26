@@ -12,8 +12,10 @@ import {
   Upload,
 } from 'lucide-react'
 import { CandlestickChart } from '../charts/CandlestickChart'
+import { AITradeSignalCard } from '../components/AITradeSignalCard'
 import { AnalysisReportCard } from '../components/AnalysisReportCard'
 import { api } from '../services/api'
+import { playAlertSound, showBrowserNotification } from '../utils/notifications'
 import type {
   InstrumentSpec,
   Timeframe,
@@ -52,6 +54,7 @@ export const DashboardPage: React.FC<Props> = ({
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [paperBusy, setPaperBusy] = useState(false)
   const [paperMsg, setPaperMsg] = useState<string | null>(null)
+  const [showDetailedReport, setShowDetailedReport] = useState(false)
   const [showAddSymbol, setShowAddSymbol] = useState(false)
   const [newSymbol, setNewSymbol] = useState('')
   const [newName, setNewName] = useState('')
@@ -75,6 +78,11 @@ export const DashboardPage: React.FC<Props> = ({
     refetchInterval: 60000,
   })
 
+  const settingsQ = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  })
+
   const activeSpec: InstrumentSpec | undefined = instrumentsQ.data?.find(
     (i) => i.symbol === symbol
   )
@@ -88,6 +96,26 @@ export const DashboardPage: React.FC<Props> = ({
       const report = await api.runAnalysis(symbol, timeframe, allowDemo, provider)
       setAnalysis(report)
       onNotificationRefresh()
+
+      const alertsCfg = settingsQ.data?.user_settings?.alerts
+      const isQualifying =
+        report.signal_status === 'BUY SIGNAL' || report.signal_status === 'SELL SIGNAL'
+      if (isQualifying) {
+        const allowDir =
+          (report.signal_status === 'BUY SIGNAL' && (alertsCfg?.enable_buy_alerts ?? true)) ||
+          (report.signal_status === 'SELL SIGNAL' && (alertsCfg?.enable_sell_alerts ?? true))
+        if (allowDir) {
+          if (alertsCfg?.sound_enabled ?? true) {
+            playAlertSound()
+          }
+          if (alertsCfg?.browser_notifications_enabled ?? true) {
+            showBrowserNotification(
+              `AI TRADING ANALYZER: ${report.signal_status} — ${report.symbol}`,
+              `Timeframe: ${report.timeframe} | Entry: ${report.trade_levels.entry_price ?? 'N/A'} | SL: ${report.trade_levels.stop_loss ?? 'N/A'} | TP1: ${report.trade_levels.take_profit_1 ?? 'N/A'}`
+            )
+          }
+        }
+      }
     } catch (err: any) {
       setAnalyzeError(err.message || 'Analysis failed.')
     } finally {
@@ -377,15 +405,15 @@ export const DashboardPage: React.FC<Props> = ({
           <div className="text-[11px] text-terminal-muted">{overview?.market_status}</div>
         </div>
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-[11px] text-terminal-muted">Volatility (ATR)</div>
+          <div className="text-[11px] text-terminal-muted">How much is the market moving?</div>
           <div className="text-xs font-semibold mt-0.5">{overview?.volatility_condition || 'Unavailable'}</div>
           <div className="text-[11px] text-terminal-muted">
-            RSI(14): {indicators?.rsi_14 ?? 'N/A'}
+            Momentum (RSI): {indicators?.rsi_14 ?? 'N/A'}
           </div>
         </div>
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-[11px] text-terminal-muted">EMA / MACD</div>
-          <div className="text-xs font-semibold mt-0.5 truncate">{indicators?.ema_alignment || 'unavailable'}</div>
+          <div className="text-[11px] text-terminal-muted">Short-Term Trend</div>
+          <div className="text-xs font-semibold mt-0.5 truncate">{indicators?.ema_alignment?.replace(/_/g, ' ') || 'unavailable'}</div>
           <div className="text-[11px] text-terminal-muted truncate">{indicators?.macd_condition || '—'}</div>
         </div>
       </div>
@@ -412,6 +440,18 @@ export const DashboardPage: React.FC<Props> = ({
           <span>{analyzeError || paperMsg}</span>
         </div>
       )}
+
+      {/* Prominent Beginner-Friendly AI TRADE SIGNAL Section */}
+      <AITradeSignalCard
+        report={analysis}
+        scanning={analyzing}
+        dataUnavailable={!marketQ.data?.candles?.length}
+        symbol={symbol}
+        timeframe={timeframe}
+        decimals={decimals}
+        onSendToPaper={handleSendToPaper}
+        paperSubmitting={paperBusy}
+      />
 
       {/* Main Chart + Side Indicator & Session Panel */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
@@ -488,20 +528,34 @@ export const DashboardPage: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Analysis Output */}
+      {/* Expandable Advanced Quantitative Report & Position Sizing */}
       {analysis ? (
-        <AnalysisReportCard
-          report={analysis}
-          decimals={decimals}
-          onSendToPaper={handleSendToPaper}
-          paperSubmitting={paperBusy}
-        />
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowDetailedReport((v) => !v)}
+              className="px-4 py-2 rounded-lg border border-terminal-border bg-terminal-panel hover:border-sky-500/40 text-xs font-semibold transition"
+            >
+              {showDetailedReport
+                ? 'Hide Advanced Technical Report & Position Size Calculator'
+                : 'Open Advanced Technical Report & Position Size Calculator'}
+            </button>
+          </div>
+          {showDetailedReport && (
+            <AnalysisReportCard
+              report={analysis}
+              decimals={decimals}
+              onSendToPaper={handleSendToPaper}
+              paperSubmitting={paperBusy}
+            />
+          )}
+        </div>
       ) : (
         <div className="rounded-xl border border-dashed border-terminal-border bg-terminal-panel/50 p-6 text-center space-y-2">
           <Brain className="w-7 h-7 text-sky-400 mx-auto opacity-80" />
           <h3 className="text-sm font-semibold">Ready for Quantitative & AI Trade Evaluation</h3>
           <p className="text-xs text-terminal-muted max-w-xl mx-auto">
-            Click <strong>ANALYZE MARKET</strong> once valid market data is loaded to run candlestick pattern detection, BOS/CHoCH structure mapping, liquidity sweeps, multi-timeframe alignment, setup scoring, SL/TP planning, and structured trade explanations.
+            Click <strong>ANALYZE MARKET</strong> once valid market data is loaded to scan for qualified BUY/SELL setups, beginner-friendly explanations, entry/SL/TP levels, and multi-timeframe confirmation.
           </p>
         </div>
       )}

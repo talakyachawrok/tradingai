@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CheckCircle2, Save, Settings as SettingsIcon } from 'lucide-react'
+import { Bell, CheckCircle2, Save, Settings as SettingsIcon, Volume2 } from 'lucide-react'
 import { api } from '../services/api'
+import { playAlertSound, requestBrowserNotificationPermission } from '../utils/notifications'
 
 interface Props {
   theme: 'dark' | 'light'
@@ -143,6 +144,156 @@ export const SettingsPage: React.FC<Props> = ({ theme, onToggleTheme }) => {
               />
             </label>
           </div>
+
+          {/* Alert Settings & Confirmation Rules */}
+          {form.alerts && (
+            <div className="rounded-xl border border-terminal-border bg-terminal-panel p-4 space-y-3 lg:col-span-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-terminal-border pb-2">
+                <div className="flex items-center gap-2 font-semibold uppercase text-sky-400">
+                  <Bell className="w-4 h-4" />
+                  Alert Settings & Signal Confirmation Rules
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const perm = await requestBrowserNotificationPermission()
+                      setSavedMsg(`Browser notification permission: ${perm}`)
+                    }}
+                    className="px-2.5 py-1 rounded border border-terminal-border bg-terminal-elevated hover:border-sky-500/40"
+                  >
+                    Enable Browser Alerts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => playAlertSound()}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-terminal-border bg-terminal-elevated hover:border-sky-500/40"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" /> Test Sound
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="space-y-2.5">
+                  <div className="font-semibold text-terminal-muted uppercase">Alert Channels & Frequency</div>
+                  {[
+                    ['enable_buy_alerts', 'Enable BUY Signal Alerts'],
+                    ['enable_sell_alerts', 'Enable SELL Signal Alerts'],
+                    ['browser_notifications_enabled', 'Browser Desktop Notifications'],
+                    ['sound_enabled', 'Alert Sound Effects'],
+                  ].map(([k, lbl]) => (
+                    <label key={k} className="flex items-center justify-between">
+                      <span>{lbl}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.alerts[k])}
+                        onChange={(e) =>
+                          setForm({ ...form, alerts: { ...form.alerts, [k]: e.target.checked } })
+                        }
+                      />
+                    </label>
+                  ))}
+                  {[
+                    ['alert_cooldown_minutes', 'Alert Cooldown (minutes)'],
+                    ['signal_expiry_candles', 'Signal Expiry (candles)'],
+                    ['signal_expiry_minutes', 'Signal Expiry (minutes)'],
+                  ].map(([k, lbl]) => (
+                    <label key={k} className="flex items-center justify-between gap-2">
+                      <span className="text-terminal-muted">{lbl}</span>
+                      <input
+                        type="number"
+                        value={form.alerts[k]}
+                        onChange={(e) =>
+                          setForm({ ...form, alerts: { ...form.alerts, [k]: Number(e.target.value) } })
+                        }
+                        className="w-24 px-2 py-1 rounded bg-terminal-elevated border border-terminal-border font-mono text-right"
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                {form.confirmations && (
+                  <div className="space-y-2">
+                    <div className="font-semibold text-terminal-muted uppercase">Required Confirmation Rules</div>
+                    {[
+                      ['require_candle_close', 'Candle Close Confirmation'],
+                      ['require_market_structure', 'Market Structure Alignment'],
+                      ['require_candlestick_pattern', 'Candlestick Pattern Detected'],
+                      ['require_trend_alignment', 'Trend Alignment'],
+                      ['require_htf_alignment', 'Higher Timeframe Agreement'],
+                      ['require_rsi_confirmation', 'RSI Confirmation'],
+                      ['require_ema_alignment', 'Full EMA (20/50/200) Stack'],
+                      ['require_liquidity_condition', 'Liquidity / S&R Reaction'],
+                      ['require_min_risk_reward', 'Minimum Risk/Reward Threshold'],
+                    ].map(([k, lbl]) => (
+                      <label key={k} className="flex items-center justify-between">
+                        <span>{lbl}</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.confirmations[k])}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              confirmations: { ...form.confirmations, [k]: e.target.checked },
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="font-semibold text-terminal-muted uppercase">Monitored Symbols & Timeframes</div>
+                  <div className="space-y-1.5">
+                    <div className="text-terminal-muted">Selected Symbols</div>
+                    <div className="flex flex-wrap gap-2">
+                      {['XAUUSD', 'EURUSD', 'GBPUSD', 'BTCUSD'].map((sym) => {
+                        const checked = (form.alerts.selected_symbols || []).includes(sym)
+                        return (
+                          <label key={sym} className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-terminal-border bg-terminal-elevated">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const cur: string[] = form.alerts.selected_symbols || []
+                                const next = e.target.checked ? [...cur, sym] : cur.filter((s) => s !== sym)
+                                setForm({ ...form, alerts: { ...form.alerts, selected_symbols: next } })
+                              }}
+                            />
+                            <span className="font-mono">{sym}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="text-terminal-muted">Selected Timeframes</div>
+                    <div className="flex flex-wrap gap-2">
+                      {['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'].map((tf) => {
+                        const checked = (form.alerts.selected_timeframes || []).includes(tf)
+                        return (
+                          <label key={tf} className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-terminal-border bg-terminal-elevated">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const cur: string[] = form.alerts.selected_timeframes || []
+                                const next = e.target.checked ? [...cur, tf] : cur.filter((t) => t !== tf)
+                                setForm({ ...form, alerts: { ...form.alerts, selected_timeframes: next } })
+                              }}
+                            />
+                            <span className="font-mono">{tf}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-xl border border-terminal-border bg-terminal-panel p-4 space-y-3">
             <h3 className="font-semibold uppercase text-terminal-muted">Indicator Parameters</h3>

@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from app.database.connection import db_store
+from app.models.analysis import TradeSignalRecord
 from app.models.journal import (
     BacktestResult,
     JournalEntry,
@@ -15,6 +16,7 @@ from app.models.settings import AppUserSettings
 
 COLLECTIONS = {
     "analyses": "analyses",
+    "signals": "signals",
     "journal": "journal",
     "paper_trades": "paper_trades",
     "paper_account": "paper_account",
@@ -153,6 +155,33 @@ class Repository:
     async def get_latest_model_evaluation() -> Optional[Dict[str, Any]]:
         rows = await db_store.list_all(COLLECTIONS["model_evaluations"], limit=1)
         return rows[0] if rows else None
+
+    @staticmethod
+    async def save_signal(signal: TradeSignalRecord) -> None:
+        await db_store.upsert(
+            COLLECTIONS["signals"],
+            signal.signal_id,
+            signal.model_dump(mode="json"),
+            signal.created_at.isoformat(),
+        )
+
+    @staticmethod
+    async def get_signal(signal_id: str) -> Optional[TradeSignalRecord]:
+        raw = await db_store.get(COLLECTIONS["signals"], signal_id)
+        return TradeSignalRecord.model_validate(raw) if raw else None
+
+    @staticmethod
+    async def list_signals(limit: int = 300) -> List[TradeSignalRecord]:
+        rows = await db_store.list_all(COLLECTIONS["signals"], limit=limit)
+        return [TradeSignalRecord.model_validate(r) for r in rows]
+
+    @staticmethod
+    async def find_signal_by_dedup_key(dedup_key: str) -> Optional[TradeSignalRecord]:
+        rows = await db_store.list_all(COLLECTIONS["signals"], limit=300)
+        for r in rows:
+            if r.get("dedup_key") == dedup_key:
+                return TradeSignalRecord.model_validate(r)
+        return None
 
 
 repo = Repository()

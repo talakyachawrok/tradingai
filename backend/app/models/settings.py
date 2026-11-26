@@ -85,6 +85,34 @@ class TimeframeSettings(BaseModel):
     )
 
 
+class ConfirmationSettings(BaseModel):
+    require_candle_close: bool = True
+    require_market_structure: bool = True
+    require_candlestick_pattern: bool = False
+    require_trend_alignment: bool = True
+    require_htf_alignment: bool = True
+    require_rsi_confirmation: bool = False
+    require_ema_alignment: bool = False
+    require_liquidity_condition: bool = False
+    require_min_risk_reward: bool = True
+
+
+class AlertSettings(BaseModel):
+    enable_buy_alerts: bool = True
+    enable_sell_alerts: bool = True
+    browser_notifications_enabled: bool = True
+    sound_enabled: bool = True
+    alert_cooldown_minutes: int = Field(default=15, ge=0, le=1440)
+    signal_expiry_candles: int = Field(default=6, ge=1, le=100)
+    signal_expiry_minutes: int = Field(default=240, ge=5, le=10080)
+    selected_symbols: List[str] = Field(
+        default_factory=lambda: ["XAUUSD", "EURUSD", "GBPUSD", "BTCUSD"]
+    )
+    selected_timeframes: List[Timeframe] = Field(
+        default_factory=lambda: [Timeframe.M5, Timeframe.M15, Timeframe.H1, Timeframe.H4]
+    )
+
+
 class AppUserSettings(BaseModel):
     theme: str = "dark"
     data_provider: str = "auto"
@@ -95,5 +123,7 @@ class AppUserSettings(BaseModel):
     scoring_thresholds: ScoringThresholds = Field(default_factory=ScoringThresholds)
     risk: RiskSettings = Field(default_factory=RiskSettings)
     timeframes: TimeframeSettings = Field(default_factory=TimeframeSettings)
+    confirmations: ConfirmationSettings = Field(default_factory=ConfirmationSettings)
+    alerts: AlertSettings = Field(default_factory=AlertSettings)
     news_filter_enabled: bool = False
     notifications_enabled: bool = True

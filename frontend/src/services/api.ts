@@ -8,6 +8,7 @@ import type {
   PaperTradePosition,
   Timeframe,
   TradeAnalysisReport,
+  TradeSignalRecord,
   WebhookLogRecord,
 } from '../types/trading'
 
@@ -69,6 +70,23 @@ export const api = {
     request<TradeAnalysisReport>('/api/analysis/run', {
       method: 'POST',
       body: JSON.stringify({ symbol, timeframe, allow_demo: allowDemo, provider }),
+    }),
+  listSignals: (filters: Record<string, string>) => {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v) params.set(k, v)
+    })
+    return request<TradeSignalRecord[]>(`/api/signals?${params.toString()}`)
+  },
+  getLatestSignal: (symbol?: string, timeframe?: string) => {
+    const params = new URLSearchParams()
+    if (symbol) params.set('symbol', symbol)
+    if (timeframe) params.set('timeframe', timeframe)
+    return request<TradeSignalRecord | null>(`/api/signals/latest?${params.toString()}`)
+  },
+  trackSignals: (allowDemo: boolean) =>
+    request<TradeSignalRecord[]>(`/api/signals/track?allow_demo=${allowDemo}`, {
+      method: 'POST',
     }),
   listAnalyses: () => request<TradeAnalysisReport[]>('/api/analysis/history'),
   computePositionSize: (payload: {

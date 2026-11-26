@@ -9,6 +9,18 @@ export type DataConnectionStatus =
 
 export type DecisionType = 'BUY SETUP' | 'SELL SETUP' | 'WAIT' | 'NO VALID SETUP'
 
+export type SignalStatus =
+  | 'SCANNING'
+  | 'SETUP FORMING'
+  | 'WAIT FOR CONFIRMATION'
+  | 'BUY SIGNAL'
+  | 'SELL SIGNAL'
+  | 'SIGNAL EXPIRED'
+  | 'TARGET HIT'
+  | 'STOP LOSS HIT'
+  | 'NO TRADE'
+  | 'DATA UNAVAILABLE'
+
 export interface InstrumentSpec {
   symbol: string
   display_name: string
@@ -281,8 +293,96 @@ export interface TradeExplanation {
   risk_assessment: string
 }
 
+export interface BeginnerExplanation {
+  headline: string
+  why_bullets: string[]
+  what_it_means: string
+  confirmations_met: string[]
+  confirmations_missing: string[]
+  no_trade_category?: string | null
+}
+
+export interface PatternStory {
+  detected: boolean
+  pattern_name: string
+  direction: string
+  candles_involved: string[]
+  what_happened: string
+  why_considered: string
+  confirmation_found: string
+  what_makes_it_fail: string
+}
+
+export interface SimpleTradePlan {
+  direction: string
+  entry_display: string
+  stop_loss_display: string
+  tp1_display: string
+  tp2_display: string
+  tp3_display: string
+  risk_reward_display: string
+  why_stop_loss_here: string
+  why_targets_selected: string
+}
+
+export interface SignalTrackingState {
+  entry_reached: boolean
+  entry_reached_at?: string | null
+  tp1_reached: boolean
+  tp1_reached_at?: string | null
+  tp2_reached: boolean
+  tp2_reached_at?: string | null
+  tp3_reached: boolean
+  tp3_reached_at?: string | null
+  sl_reached: boolean
+  sl_reached_at?: string | null
+  invalidated: boolean
+  expired: boolean
+  ambiguous_intrabar: boolean
+  last_checked_at?: string | null
+  last_checked_price?: number | null
+  tracking_note: string
+}
+
+export interface TradeSignalRecord {
+  signal_id: string
+  dedup_key: string
+  analysis_id: string
+  created_at: string
+  candle_timestamp: string
+  expires_at: string
+  symbol: string
+  timeframe: Timeframe
+  provider: string
+  connection_status: DataConnectionStatus
+  is_demo: boolean
+  direction: 'BUY' | 'SELL' | 'WAIT' | 'NONE'
+  status: SignalStatus
+  entry_price?: number | null
+  entry_zone_low?: number | null
+  entry_zone_high?: number | null
+  stop_loss?: number | null
+  take_profit_1?: number | null
+  take_profit_2?: number | null
+  take_profit_3?: number | null
+  risk_reward?: number | null
+  setup_score: number
+  probability_estimate?: number | null
+  probability_status: string
+  invalidation_condition: string
+  short_reason: string
+  beginner_explanation: BeginnerExplanation
+  pattern_story: PatternStory
+  simple_trade_plan: SimpleTradePlan
+  tracking: SignalTrackingState
+  notified: boolean
+}
+
 export interface TradeAnalysisReport {
   analysis_id: string
+  signal_id?: string | null
+  signal_status: SignalStatus
+  signal_expires_at?: string | null
   created_at: string
   strategy_version: string
   symbol: string
@@ -304,6 +404,9 @@ export interface TradeAnalysisReport {
   trade_levels: TradeLevels
   probability: ProbabilityEstimate
   explanation: TradeExplanation
+  beginner_explanation?: BeginnerExplanation | null
+  pattern_story?: PatternStory | null
+  simple_trade_plan?: SimpleTradePlan | null
   final_decision: DecisionType
   decision_reason: string
   risk_warnings: string[]

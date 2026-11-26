@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     routes_analysis,
     routes_market,
+    routes_signals,
     routes_system,
     routes_trading,
     routes_webhooks,
@@ -42,6 +43,7 @@ app.add_middleware(
 
 app.include_router(routes_market.router)
 app.include_router(routes_analysis.router)
+app.include_router(routes_signals.router)
 app.include_router(routes_webhooks.router)
 app.include_router(routes_trading.router)
 app.include_router(routes_system.router)

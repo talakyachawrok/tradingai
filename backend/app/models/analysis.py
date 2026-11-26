@@ -21,6 +21,19 @@ class DecisionType(str, Enum):
     NO_VALID_SETUP = "NO VALID SETUP"
 
 
+class SignalStatus(str, Enum):
+    SCANNING = "SCANNING"
+    SETUP_FORMING = "SETUP FORMING"
+    WAIT_FOR_CONFIRMATION = "WAIT FOR CONFIRMATION"
+    BUY_SIGNAL = "BUY SIGNAL"
+    SELL_SIGNAL = "SELL SIGNAL"
+    SIGNAL_EXPIRED = "SIGNAL EXPIRED"
+    TARGET_HIT = "TARGET HIT"
+    STOP_LOSS_HIT = "STOP LOSS HIT"
+    NO_TRADE = "NO TRADE"
+    DATA_UNAVAILABLE = "DATA UNAVAILABLE"
+
+
 class CertaintyLevel(str, Enum):
     DETECTED_EVENT = "detected_event"
     POSSIBLE_INTERPRETATION = "possible_interpretation"
@@ -254,8 +267,97 @@ class TradeExplanation(BaseModel):
     risk_assessment: str
 
 
+class BeginnerExplanation(BaseModel):
+    headline: str
+    why_bullets: List[str] = Field(default_factory=list)
+    what_it_means: str
+    confirmations_met: List[str] = Field(default_factory=list)
+    confirmations_missing: List[str] = Field(default_factory=list)
+    no_trade_category: Optional[str] = None  # NO TRADE, WAIT, LOW QUALITY SETUP, DATA UNAVAILABLE
+
+
+class PatternStory(BaseModel):
+    detected: bool = False
+    pattern_name: str = "No decisive candle pattern"
+    direction: str = "neutral"
+    candles_involved: List[str] = Field(default_factory=list)
+    what_happened: str = ""
+    why_considered: str = ""
+    confirmation_found: str = ""
+    what_makes_it_fail: str = ""
+
+
+class SimpleTradePlan(BaseModel):
+    direction: str = "NONE"
+    entry_display: str = "N/A"
+    stop_loss_display: str = "N/A"
+    tp1_display: str = "N/A"
+    tp2_display: str = "N/A"
+    tp3_display: str = "N/A"
+    risk_reward_display: str = "N/A"
+    why_stop_loss_here: str = ""
+    why_targets_selected: str = ""
+
+
+class SignalTrackingState(BaseModel):
+    entry_reached: bool = False
+    entry_reached_at: Optional[datetime] = None
+    tp1_reached: bool = False
+    tp1_reached_at: Optional[datetime] = None
+    tp2_reached: bool = False
+    tp2_reached_at: Optional[datetime] = None
+    tp3_reached: bool = False
+    tp3_reached_at: Optional[datetime] = None
+    sl_reached: bool = False
+    sl_reached_at: Optional[datetime] = None
+    invalidated: bool = False
+    expired: bool = False
+    ambiguous_intrabar: bool = False
+    last_checked_at: Optional[datetime] = None
+    last_checked_price: Optional[float] = None
+    tracking_note: str = "Awaiting market price tracking."
+
+
+class TradeSignalRecord(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    signal_id: str
+    dedup_key: str
+    analysis_id: str
+    created_at: datetime
+    candle_timestamp: datetime
+    expires_at: datetime
+    symbol: str
+    timeframe: Timeframe
+    provider: str
+    connection_status: DataConnectionStatus
+    is_demo: bool = False
+    direction: str  # BUY, SELL, WAIT, NONE
+    status: SignalStatus
+    entry_price: Optional[float] = None
+    entry_zone_low: Optional[float] = None
+    entry_zone_high: Optional[float] = None
+    stop_loss: Optional[float] = None
+    take_profit_1: Optional[float] = None
+    take_profit_2: Optional[float] = None
+    take_profit_3: Optional[float] = None
+    risk_reward: Optional[float] = None
+    setup_score: float = 0.0
+    probability_estimate: Optional[float] = None
+    probability_status: str = "PROBABILITY MODEL NOT YET VALIDATED"
+    invalidation_condition: str = ""
+    short_reason: str = ""
+    beginner_explanation: BeginnerExplanation
+    pattern_story: PatternStory
+    simple_trade_plan: SimpleTradePlan
+    tracking: SignalTrackingState = Field(default_factory=SignalTrackingState)
+    notified: bool = False
+
+
 class TradeAnalysisReport(BaseModel):
     analysis_id: str
+    signal_id: Optional[str] = None
+    signal_status: SignalStatus = SignalStatus.NO_TRADE
+    signal_expires_at: Optional[datetime] = None
     created_at: datetime
     strategy_version: str = "1.0.0"
     symbol: str
@@ -277,6 +379,9 @@ class TradeAnalysisReport(BaseModel):
     trade_levels: TradeLevels
     probability: ProbabilityEstimate
     explanation: TradeExplanation
+    beginner_explanation: Optional[BeginnerExplanation] = None
+    pattern_story: Optional[PatternStory] = None
+    simple_trade_plan: Optional[SimpleTradePlan] = None
     final_decision: DecisionType
     decision_reason: str
     risk_warnings: List[str] = Field(default_factory=list)
