@@ -1,0 +1,73 @@
+//@version=5
+indicator("AI Trading Analyzer - Structured Alert Emitter", overlay=true, max_labels_count=50)
+
+// --- Configurable Inputs ---
+webhookSecret   = input.string("change-me-to-a-strong-random-secret", "Webhook Secret Token", confirm=true)
+emaFastLen      = input.int(20, "EMA Fast Length", minval=2)
+emaMedLen       = input.int(50, "EMA Medium Length", minval=5)
+emaSlowLen      = input.int(200, "EMA Slow Length", minval=20)
+rsiLen          = input.int(14, "RSI Length", minval=2)
+atrLen          = input.int(14, "ATR Length", minval=2)
+swingLookback   = input.int(3, "Swing Pivot Lookback", minval=2)
+enableBullAlert = input.bool(true, "Trigger on Bullish Patterns / Crossovers")
+enableBearAlert = input.bool(true, "Trigger on Bearish Patterns / Crossovers")
+
+// --- Core Calculations ---
+ema20  = ta.ema(close, emaFastLen)
+ema50  = ta.ema(close, emaMedLen)
+ema200 = ta.ema(close, emaSlowLen)
+rsi14  = ta.rsi(close, rsiLen)
+atr14  = ta.atr(atrLen)
+
+plot(ema20, "EMA 20", color=color.new(color.aqua, 15), linewidth=1)
+plot(ema50, "EMA 50", color=color.new(color.orange, 15), linewidth=1)
+plot(ema200, "EMA 200", color=color.new(color.purple, 15), linewidth=2)
+
+// --- Candlestick Metrics & Contextual Pattern Detection ---
+candleRange = math.max(high - low, syminfo.mintick)
+bodySize    = math.abs(close - open)
+upperWick   = high - math.max(open, close)
+lowerWick   = math.min(open, close) - low
+
+isBullEngulf = close[1] < open[1] and close > open and open <= close[1] and close >= open[1] and bodySize > math.abs(close[1] - open[1])
+isBearEngulf = close[1] > open[1] and close < open and open >= close[1] and close <= open[1] and bodySize > math.abs(close[1] - open[1])
+isBullPin    = (lowerWick / math.max(bodySize, candleRange * 0.03)) >= 2.0 and (upperWick / candleRange) <= 0.25 and close > open
+isBearPin    = (upperWick / math.max(bodySize, candleRange * 0.03)) >= 2.0 and (lowerWick / candleRange) <= 0.25 and close < open
+
+emaBullCross = ta.crossover(ema20, ema50)
+emaBearCross = ta.crossunder(ema20, ema50)
+
+patternName = isBullEngulf ? "Bullish Engulfing" :
+              isBearEngulf ? "Bearish Engulfing" :
+              isBullPin    ? "Bullish Pin Bar" :
+              isBearPin    ? "Bearish Pin Bar" :
+              emaBullCross ? "EMA20/50 Bullish Cross" :
+              emaBearCross ? "EMA20/50 Bearish Cross" : "None"
+
+triggerCondition = barstate.isconfirmed and (
+    (enableBullAlert and (isBullEngulf or isBullPin or emaBullCross)) or
+    (enableBearAlert and (isBearEngulf or isBearPin or emaBearCross))
+)
+
+plotshape(isBullEngulf or isBullPin, title="Bullish Signal", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.tiny)
+plotshape(isBearEngulf or isBearPin, title="Bearish Signal", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.tiny)
+
+// --- Build Structured JSON Payload ---
+if triggerCondition
+    payload = '{' +
+      '"symbol":"' + syminfo.ticker + '",' +
+      '"exchange":"' + syminfo.prefix + '",' +
+      '"timeframe":"' + timeframe.period + '",' +
+      '"timestamp":"' + str.format_time(time_close, "yyyy-MM-dd\'T\'HH:mm:ss\'Z\'", "UTC") + '",' +
+      '"open":' + str.tostring(open) + ',' +
+      '"high":' + str.tostring(high) + ',' +
+      '"low":' + str.tostring(low) + ',' +
+      '"close":' + str.tostring(close) + ',' +
+      '"volume":' + str.tostring(volume) + ',' +
+      '"source":"TradingView",' +
+      '"event":"analysis_trigger",' +
+      '"pattern":"' + patternName + '",' +
+      '"indicators":{"ema20":' + str.tostring(ema20) + ',"ema50":' + str.tostring(ema50) + ',"rsi14":' + str.tostring(rsi14) + ',"atr14":' + str.tostring(atr14) + '},' +
+      '"secret":"' + webhookSecret + '"' +
+      '}'
+    alert(payload, alert.freq_once_per_bar_close)
