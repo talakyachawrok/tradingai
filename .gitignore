@@ -11,8 +11,8 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
-# Local SQLite DB & Data
-data/
+# Ephemeral runtime / legacy local data folder (root only, never backend/app/data/)
+/data/
 *.db
 *.sqlite3
 
