@@ -1,0 +1,156 @@
+{
+  "validated": true,
+  "is_experimental": false,
+  "model_available": true,
+  "artifact_loaded": true,
+  "status": "VALIDATED CALIBRATED (gradient_boosting)",
+  "trained_at": "2026-11-28T19:51:30.063656+00:00",
+  "trained_on": "BTCUSD, ETHUSD, SOLUSD, BNBUSD, XRPUSD (1h, binance_public)",
+  "symbol": "BTCUSD,ETHUSD,SOLUSD,BNBUSD,XRPUSD",
+  "timeframe": "1h",
+  "model_type": "gradient_boosting",
+  "horizon_bars": 24,
+  "is_demo": false,
+  "calibration_method": "platt_sigmoid_val_split",
+  "feature_count": 29,
+  "feature_names": [
+    "body_ratio",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "candle_dir_aligned",
+    "rsi_14",
+    "rsi_slope_3",
+    "atr_pct",
+    "volatility_ratio",
+    "realized_vol_14",
+    "ema20_dist_atr",
+    "ema50_dist_atr",
+    "sma20_dist_atr",
+    "sma50_dist_atr",
+    "ema20_50_spread_atr",
+    "macd_norm_atr",
+    "macd_hist_norm_atr",
+    "ret_1_atr",
+    "ret_5_atr",
+    "ret_12_atr",
+    "dist_to_swing_high_atr",
+    "dist_to_swing_low_atr",
+    "pattern_alignment",
+    "trend_alignment_score",
+    "stop_dist_atr",
+    "target_dist_atr",
+    "rr_planned",
+    "session_utc_hour_sin",
+    "session_utc_hour_cos",
+    "setup_direction"
+  ],
+  "samples_total": 14630,
+  "base_positive_rate": 0.2496,
+  "split": {
+    "train": 8778,
+    "validation": 2926,
+    "test": 2926
+  },
+  "test_metrics": {
+    "accuracy": 0.6555,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "roc_auc": 0.5993,
+    "brier_score": 0.2376,
+    "raw_brier_score": 0.2546,
+    "log_loss": 0.6746,
+    "val_brier_score": 0.1766
+  },
+  "walk_forward_fold_accuracies": [
+    0.72,
+    0.7959,
+    0.6179
+  ],
+  "calibration": [
+    {
+      "predicted_mean": 0.179,
+      "empirical_freq": 0.254
+    },
+    {
+      "predicted_mean": 0.247,
+      "empirical_freq": 0.404
+    },
+    {
+      "predicted_mean": 0.42,
+      "empirical_freq": 1.0
+    }
+  ],
+  "by_regime": {
+    "ranging": {
+      "samples": 527,
+      "accuracy": 0.6262,
+      "positive_rate": 0.3738
+    },
+    "trending_bear": {
+      "samples": 1912,
+      "accuracy": 0.6355,
+      "positive_rate": 0.3645
+    },
+    "trending_bull": {
+      "samples": 487,
+      "accuracy": 0.7659,
+      "positive_rate": 0.2341
+    }
+  },
+  "leakage_note": "Strictly chronological 60/20/20 split (preprocessor fitted on train, Platt calibration fitted on validation, evaluated on holdout test) + expanding walk-forward; intrabar SL/TP conflicts labeled as loss.",
+  "artifact_path": "setup_probability_model.joblib",
+  "model_selection_comparison": [
+    {
+      "model_type": "logistic_regression",
+      "validated": true,
+      "is_experimental": false,
+      "test_metrics": {
+        "accuracy": 0.6555,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "roc_auc": 0.5349,
+        "brier_score": 0.2384,
+        "raw_brier_score": 0.2535,
+        "log_loss": 0.6761,
+        "val_brier_score": 0.1773
+      },
+      "composite_score": 0.0465
+    },
+    {
+      "model_type": "random_forest",
+      "validated": true,
+      "is_experimental": false,
+      "test_metrics": {
+        "accuracy": 0.6555,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "roc_auc": 0.5542,
+        "brier_score": 0.2382,
+        "raw_brier_score": 0.2517,
+        "log_loss": 0.676,
+        "val_brier_score": 0.1773
+      },
+      "composite_score": 0.066
+    },
+    {
+      "model_type": "gradient_boosting",
+      "validated": true,
+      "is_experimental": false,
+      "test_metrics": {
+        "accuracy": 0.6555,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "roc_auc": 0.5993,
+        "brier_score": 0.2376,
+        "raw_brier_score": 0.2546,
+        "log_loss": 0.6746,
+        "val_brier_score": 0.1766
+      },
+      "composite_score": 0.1117
+    }
+  ]
+}

@@ -177,7 +177,13 @@ async def run_full_analysis(
     pattern_story = build_pattern_story(patterns, structure, indicators)
     simple_plan = build_simple_trade_plan(decision, levels, decimals=decimals)
 
-    probability = probability_manager.predict(candles)
+    probability = probability_manager.predict(
+        candles=candles,
+        candidate_dir=candidate_dir,
+        levels=levels,
+        patterns=patterns,
+        structure=structure,
+    )
     explanation = await generate_trade_explanation(
         symbol=norm_symbol,
         timeframe=timeframe.value,

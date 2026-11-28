@@ -248,10 +248,20 @@ class PositionSizeResult(BaseModel):
 class ProbabilityEstimate(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     model_validated: bool = False
+    is_experimental: bool = True
+    model_available: bool = False
     status_label: str = "PROBABILITY MODEL NOT YET VALIDATED"
     model_name: Optional[str] = None
     estimated_win_probability: Optional[float] = Field(default=None, ge=0, le=1)
-    definition: str = "Probability that TP1 is reached before SL within the configured lookahead horizon."
+    raw_probability: Optional[float] = Field(default=None, ge=0, le=1)
+    calibration_method: Optional[str] = None
+    definition: str = (
+        "Estimated calibrated probability that TP1 is reached before Stop Loss within "
+        "the configured lookahead horizon under historical setup rules. This is a "
+        "statistical estimate, not a guarantee of future trade performance."
+    )
+    explanation: str = ""
+    trained_on: Optional[str] = None
     validation_metrics: Dict[str, Any] = Field(default_factory=dict)
 
 

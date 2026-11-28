@@ -131,16 +131,33 @@ export const AITradeSignalCard: React.FC<Props> = ({
               <div className="text-[11px] text-sky-400 font-medium">{report.setup_score.grade_label}</div>
             </div>
 
-            <div className="px-3.5 py-2 rounded-xl bg-terminal-panel border border-terminal-border text-right">
-              <div className="text-[10px] uppercase tracking-wider text-terminal-muted">ML Win Probability</div>
+            <div
+              className="px-3.5 py-2 rounded-xl bg-terminal-panel border border-terminal-border text-right"
+              title={report.probability.explanation || report.probability.definition}
+            >
+              <div className="text-[10px] uppercase tracking-wider text-terminal-muted">
+                ML TP1 Probability
+                {report.probability.is_experimental && report.probability.estimated_win_probability != null && (
+                  <span className="ml-1 text-amber-400">· EXP</span>
+                )}
+              </div>
               {report.probability.model_validated &&
               report.probability.estimated_win_probability != null ? (
-                <div className="text-xl font-extrabold text-emerald-400 tabular-nums">
-                  {(report.probability.estimated_win_probability * 100).toFixed(1)}%
+                <div>
+                  <div
+                    className={`text-xl font-extrabold tabular-nums ${
+                      report.probability.is_experimental ? 'text-amber-400' : 'text-emerald-400'
+                    }`}
+                  >
+                    {(report.probability.estimated_win_probability * 100).toFixed(1)}%
+                  </div>
+                  <div className="text-[10px] text-terminal-muted max-w-[160px] truncate">
+                    {report.probability.calibration_method ? 'Calibrated · Stat. only' : 'Stat. estimate only'}
+                  </div>
                 </div>
               ) : (
-                <div className="text-[11px] font-semibold text-amber-400 max-w-[140px]">
-                  PROBABILITY MODEL NOT YET VALIDATED
+                <div className="text-[11px] font-semibold text-amber-400 max-w-[160px]">
+                  {report.probability.status_label || 'ML UNAVAILABLE'}
                 </div>
               )}
             </div>

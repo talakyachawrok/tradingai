@@ -318,10 +318,16 @@ export interface TradeLevels {
 
 export interface ProbabilityEstimate {
   model_validated: boolean
+  is_experimental?: boolean
+  model_available?: boolean
   status_label: string
   model_name?: string | null
   estimated_win_probability?: number | null
+  raw_probability?: number | null
+  calibration_method?: string | null
   definition: string
+  explanation?: string
+  trained_on?: string | null
   validation_metrics: Record<string, unknown>
 }
 

@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.core.logging_config import logger
 from app.data.manager import market_data_manager
 from app.database.connection import db_store
+from app.ml.probability import probability_manager
 from app.models.market import Timeframe
 
 
@@ -26,6 +27,16 @@ from app.models.market import Timeframe
 async def lifespan(_app: FastAPI):
     cfg = get_settings()
     await db_store.initialize()
+    if not probability_manager.model_available:
+        probability_manager.load_saved_model()
+    logger.info(
+        "ML Probability Engine status: available=%s validated=%s experimental=%s model=%s trained_on=%s",
+        probability_manager.model_available,
+        probability_manager.validated,
+        probability_manager.is_experimental,
+        probability_manager.model_name,
+        probability_manager.trained_on,
+    )
     logger.info(
         "Starting %s (env=%s, storage=%s, cors_origins=%s)",
         cfg.app_name,

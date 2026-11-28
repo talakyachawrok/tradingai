@@ -60,7 +60,7 @@ async def test_backtest_lookahead_free_and_demo_run():
 
 @pytest.mark.asyncio
 async def test_ml_model_strict_unvalidated_until_trained():
-    mgr = ProbabilityModelManager()
+    mgr = ProbabilityModelManager(auto_load=False)
     provider = DemoHistoricalProvider()
     res = await provider.fetch_candles("XAUUSD", Timeframe.H1, limit=260)
     candles, _ = validate_and_clean_candles(res.raw_candles, Timeframe.H1, check_staleness=False)
@@ -68,13 +68,16 @@ async def test_ml_model_strict_unvalidated_until_trained():
     untrained_pred = mgr.predict(candles)
     assert untrained_pred.model_validated is False
     assert untrained_pred.estimated_win_probability is None
-    assert "NOT YET VALIDATED" in untrained_pred.status_label
+    assert "ML UNAVAILABLE" in untrained_pred.status_label
 
-    report = mgr.train_and_validate(candles, "XAUUSD", Timeframe.H1, model_type="logistic_regression", horizon_bars=12)
+    report = mgr.train_and_validate(
+        candles, "XAUUSD", Timeframe.H1, model_type="logistic_regression", horizon_bars=12, is_demo=True
+    )
     assert "validated" in report
     if report["validated"]:
         trained_pred = mgr.predict(candles)
         assert trained_pred.model_validated is True
+        assert trained_pred.is_experimental is True
         assert 0.0 <= (trained_pred.estimated_win_probability or 0.0) <= 1.0
 
 
@@ -112,7 +115,8 @@ def test_api_endpoints_webhook_dedup_and_paper_trading():
         assert ana.status_code == 200
         ana_json = ana.json()
         assert ana_json["final_decision"] in ("BUY SETUP", "SELL SETUP", "WAIT", "NO VALID SETUP")
-        assert ana_json["probability"]["status_label"] == "PROBABILITY MODEL NOT YET VALIDATED"
+        assert ana_json["probability"]["model_validated"] is True
+        assert 0.0 < ana_json["probability"]["estimated_win_probability"] < 1.0
 
         # 5. Journal automatically recorded the analysis
         j = client.get("/api/journal")

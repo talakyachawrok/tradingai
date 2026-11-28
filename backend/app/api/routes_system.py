@@ -4,9 +4,11 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.core.config import get_settings
+from app.core.instruments import normalize_symbol
 from app.data.manager import market_data_manager
 from app.database.connection import db_store
 from app.database.repositories import repo
+from app.ml.features import FEATURE_NAMES
 from app.ml.probability import probability_manager
 from app.models.market import Timeframe
 from app.models.settings import AppUserSettings
@@ -25,7 +27,9 @@ async def health():
             "message": db_store.status_message,
         },
         "config": settings.safe_public_status(),
+        "ml_model_available": probability_manager.model_available,
         "ml_model_validated": probability_manager.validated,
+        "ml_is_experimental": probability_manager.is_experimental,
     }
 
 
@@ -57,6 +61,10 @@ async def ml_status():
     return {
         "current_runtime": probability_manager.evaluation_report,
         "last_persisted_evaluation": latest,
+        "artifact_loaded": probability_manager.model_available,
+        "is_experimental": probability_manager.is_experimental,
+        "feature_count": len(FEATURE_NAMES),
+        "feature_names": FEATURE_NAMES,
     }
 
 
@@ -71,26 +79,35 @@ class TrainMLRequest(BaseModel):
 @router.post("/ml/train")
 async def train_ml_model(req: TrainMLRequest):
     settings = await repo.get_settings()
+    norm_symbol = normalize_symbol(req.symbol)
     resp = await market_data_manager.get_market_data(
-        symbol=req.symbol,
+        symbol=norm_symbol,
         timeframe=req.timeframe,
         provider_override=settings.data_provider,
-        limit=600,
+        limit=1000,
         allow_demo=req.allow_demo,
     )
-    if len(resp.candles) < 120:
+    if len(resp.candles) < 150:
         raise HTTPException(
             status_code=422,
             detail=resp.overview.status_message
-            or f"Need at least 120 candles to train and chronologically validate model (found {len(resp.candles)}).",
+            or f"Need at least 150 candles to train and chronologically validate model (found {len(resp.candles)}).",
         )
     report = probability_manager.train_and_validate(
         candles=resp.candles,
-        symbol=req.symbol,
+        symbol=norm_symbol,
         timeframe=req.timeframe,
         model_type=req.model_type,
         horizon_bars=req.horizon_bars,
+        is_demo=resp.overview.is_demo,
+        data_source=resp.overview.data_source,
+        save_artifact=False,
     )
+    if not report.get("validated"):
+        raise HTTPException(
+            status_code=422,
+            detail=report.get("error") or "Model validation failed for this dataset.",
+        )
     report["data_source"] = resp.overview.data_source
     report["is_demo"] = resp.overview.is_demo
     await repo.save_model_evaluation(str(uuid.uuid4()), report)

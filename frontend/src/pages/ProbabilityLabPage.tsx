@@ -17,6 +17,7 @@ export const ProbabilityLabPage: React.FC<Props> = ({ allowDemo }) => {
   const [error, setError] = useState<string | null>(null)
 
   const statusQ = useQuery({ queryKey: ['ml-status'], queryFn: api.getMlStatus })
+  const instrumentsQ = useQuery({ queryKey: ['instruments'], queryFn: api.listInstruments })
 
   const handleTrain = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,6 +40,15 @@ export const ProbabilityLabPage: React.FC<Props> = ({ allowDemo }) => {
   }
 
   const runtime = statusQ.data?.current_runtime
+  const symbolOptions = (instrumentsQ.data || []).length
+    ? instrumentsQ.data!
+    : [
+        { symbol: 'BTCUSD', display_name: 'Bitcoin / US Dollar' },
+        { symbol: 'ETHUSD', display_name: 'Ethereum / US Dollar' },
+        { symbol: 'XAUUSD', display_name: 'Gold / US Dollar' },
+        { symbol: 'EURUSD', display_name: 'Euro / US Dollar' },
+        { symbol: 'GBPUSD', display_name: 'British Pound / US Dollar' },
+      ]
 
   return (
     <div className="space-y-5">
@@ -49,18 +59,20 @@ export const ProbabilityLabPage: React.FC<Props> = ({ allowDemo }) => {
             <div>
               <h2 className="text-base font-bold">ML Probability Estimation Lab</h2>
               <p className="text-xs text-terminal-muted">
-                Separate from the 0–100 Setup Score. Estimates TP1-before-SL probability using strictly chronological splits and walk-forward validation.
+                Separate from the 0–100 Setup Score. Estimates calibrated TP1-before-SL probability using strictly chronological splits, validation-set Platt calibration, and walk-forward checks ({statusQ.data?.feature_count ?? runtime?.feature_count ?? 29} leakage-free features).
               </p>
             </div>
           </div>
           <span
             className={`px-3 py-1 rounded-full text-xs font-bold ${
-              runtime?.validated
-                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+              !runtime?.validated
+                ? 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
+                : runtime?.is_experimental
+                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
             }`}
           >
-            {runtime?.status || 'PROBABILITY MODEL NOT YET VALIDATED'}
+            {runtime?.status || 'ML UNAVAILABLE'}
           </span>
         </div>
 
@@ -68,10 +80,11 @@ export const ProbabilityLabPage: React.FC<Props> = ({ allowDemo }) => {
           <label className="space-y-1">
             <span className="text-terminal-muted">Symbol</span>
             <select value={symbol} onChange={(e) => setSymbol(e.target.value)} className="w-full px-2.5 py-2 rounded bg-terminal-elevated border border-terminal-border font-semibold">
-              <option value="BTCUSD">BTCUSD</option>
-              <option value="XAUUSD">XAUUSD</option>
-              <option value="EURUSD">EURUSD</option>
-              <option value="GBPUSD">GBPUSD</option>
+              {symbolOptions.map((item) => (
+                <option key={item.symbol} value={item.symbol}>
+                  {item.symbol} — {item.display_name}
+                </option>
+              ))}
             </select>
           </label>
           <label className="space-y-1">
@@ -107,7 +120,20 @@ export const ProbabilityLabPage: React.FC<Props> = ({ allowDemo }) => {
       {runtime?.validated && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 text-xs">
           <div className="rounded-xl border border-terminal-border bg-terminal-panel p-4 space-y-3">
-            <h4 className="font-semibold uppercase text-terminal-muted">Chronological Test Set Metrics</h4>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h4 className="font-semibold uppercase text-terminal-muted">Chronological Test Set Metrics</h4>
+              <span className="text-[11px] font-mono text-sky-400">
+                {runtime.samples_total || 0} samples ({runtime.split?.train || 0}/{runtime.split?.validation || 0}/{runtime.split?.test || 0})
+              </span>
+            </div>
+            {(runtime.trained_on || runtime.calibration_method) && (
+              <div className="text-[11px] text-terminal-muted">
+                Dataset: <span className="text-terminal-text font-medium">{runtime.trained_on || `${runtime.symbol} (${runtime.timeframe})`}</span>
+                {runtime.calibration_method && (
+                  <> · Calibration: <span className="text-terminal-text font-mono">{runtime.calibration_method}</span></>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-3">
               {Object.entries(runtime.test_metrics || {}).map(([k, v]) => (
                 <div key={k} className="p-2.5 rounded bg-terminal-elevated border border-terminal-border">

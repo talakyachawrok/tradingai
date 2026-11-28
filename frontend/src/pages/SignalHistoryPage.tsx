@@ -163,7 +163,14 @@ export const SignalHistoryPage: React.FC<Props> = ({ allowDemo }) => {
                   <td className="p-3 font-mono whitespace-nowrap">
                     {sig.entry_price ?? '—'} / {sig.stop_loss ?? '—'} / {sig.take_profit_1 ?? '—'}
                   </td>
-                  <td className="p-3 font-mono">{sig.setup_score}/100</td>
+                  <td className="p-3 font-mono">
+                    <div>{sig.setup_score}/100</div>
+                    {sig.probability_estimate != null && (
+                      <div className="text-[10px] text-sky-400">
+                        ML: {(sig.probability_estimate * 100).toFixed(1)}%
+                      </div>
+                    )}
+                  </td>
                   <td className="p-3 space-y-1">
                     <div className="flex flex-wrap gap-1 text-[10px]">
                       {sig.tracking.entry_reached && (

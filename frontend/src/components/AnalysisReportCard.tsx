@@ -168,15 +168,17 @@ export const AnalysisReportCard: React.FC<Props> = ({
           <div className="space-y-4">
             {/* Probability Model Separation */}
             <div className="rounded-lg border border-terminal-border bg-terminal-elevated/60 p-3.5 space-y-1.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
                   ML Probability Model
                 </span>
                 <span
                   className={`text-[11px] px-2 py-0.5 rounded font-semibold ${
-                    report.probability.model_validated
-                      ? 'bg-emerald-500/15 text-emerald-400'
-                      : 'bg-amber-500/15 text-amber-400'
+                    !report.probability.model_validated || report.probability.estimated_win_probability == null
+                      ? 'bg-slate-500/20 text-slate-300'
+                      : report.probability.is_experimental
+                      ? 'bg-amber-500/15 text-amber-400'
+                      : 'bg-emerald-500/15 text-emerald-400'
                   }`}
                 >
                   {report.probability.status_label}
@@ -185,12 +187,24 @@ export const AnalysisReportCard: React.FC<Props> = ({
               {report.probability.model_validated &&
               report.probability.estimated_win_probability !== null &&
               report.probability.estimated_win_probability !== undefined ? (
-                <div className="text-lg font-bold tabular-nums">
-                  {(report.probability.estimated_win_probability * 100).toFixed(1)}% estimated TP1-before-SL probability
+                <div className="space-y-1">
+                  <div className="text-lg font-bold tabular-nums">
+                    {(report.probability.estimated_win_probability * 100).toFixed(1)}% estimated TP1-before-SL probability
+                    {report.probability.raw_probability != null && (
+                      <span className="ml-2 text-xs font-normal text-terminal-muted">
+                        (raw {(report.probability.raw_probability * 100).toFixed(1)}%)
+                      </span>
+                    )}
+                  </div>
+                  {report.probability.explanation && (
+                    <p className="text-[11px] text-terminal-text/90">{report.probability.explanation}</p>
+                  )}
+                  <p className="text-[11px] text-terminal-muted">{report.probability.definition}</p>
                 </div>
               ) : (
                 <p className="text-xs text-terminal-muted">
-                  Setup score ({report.setup_score.total_score}/100) is NOT a win probability. Train & validate the ML model in the Probability Lab on historical data first.
+                  {report.probability.explanation ||
+                    `Setup score (${report.setup_score.total_score}/100) is NOT a win probability. Train & validate the ML model in the Probability Lab or supply sufficient market history.`}
                 </p>
               )}
             </div>
