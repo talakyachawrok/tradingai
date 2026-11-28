@@ -1,5 +1,6 @@
 """Application configuration management using environment variables."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import List
@@ -23,14 +24,10 @@ class Settings(BaseSettings):
     app_name: str = "AI Trading Analyzer"
     app_env: str = "development"
     app_host: str = "0.0.0.0"
-    app_port: int = 8000
+    app_port: int = Field(default_factory=lambda: int(os.getenv("PORT", "8000")))
     log_level: str = "INFO"
+    frontend_url: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-
-    # Database
-    mongodb_uri: str = ""
-    mongodb_db_name: str = "ai_trading_analyzer"
-    local_db_path: str = str(PROJECT_ROOT / "data" / "ai_trading_analyzer.db")
 
     # Market Data Providers
     default_data_provider: str = "auto"
@@ -38,6 +35,7 @@ class Settings(BaseSettings):
     alphavantage_api_key: str = ""
     finnhub_api_key: str = ""
     stale_data_threshold_seconds: int = Field(default=900, ge=30)
+    market_data_cache_ttl_seconds: int = Field(default=30, ge=0, le=3600)
 
     # TradingView Webhook
     tradingview_webhook_secret: str = "change-me-to-a-strong-random-secret"
@@ -62,7 +60,21 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> List[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins: List[str] = []
+        if self.frontend_url.strip():
+            origins.append(self.frontend_url.strip().rstrip("/"))
+        for origin in self.cors_origins.split(","):
+            cleaned = origin.strip().rstrip("/")
+            if not cleaned:
+                continue
+            # Avoid wildcard '*' in production environments
+            if self.app_env.lower() == "production" and cleaned == "*":
+                continue
+            if cleaned not in origins:
+                origins.append(cleaned)
+        if not origins and self.app_env.lower() != "production":
+            origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+        return origins
 
     def safe_public_status(self) -> dict:
         """Return non-sensitive configuration status for frontend display."""
@@ -86,6 +98,7 @@ class Settings(BaseSettings):
             "news_provider": self.news_provider,
             "news_configured": bool(self.finnhub_api_key.strip()) and self.news_provider != "none",
             "stale_data_threshold_seconds": self.stale_data_threshold_seconds,
+            "market_data_cache_ttl_seconds": self.market_data_cache_ttl_seconds,
         }
 
     def _is_ai_configured(self) -> bool:

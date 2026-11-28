@@ -7,12 +7,13 @@ import type {
   PaperAccountSummary,
   PaperTradePosition,
   Timeframe,
+  ProviderConnectionTestResult,
   TradeAnalysisReport,
   TradeSignalRecord,
   WebhookLogRecord,
 } from '../types/trading'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+const API_BASE = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -44,11 +45,23 @@ export const api = {
       body: JSON.stringify(spec),
     }),
   listProviders: () => request<any[]>('/api/market/providers'),
-  getOhlcv: (symbol: string, timeframe: Timeframe, allowDemo: boolean, provider?: string) => {
+  testProviderConnection: (provider: string, symbol: string = 'XAUUSD', timeframe: Timeframe = '1h') =>
+    request<ProviderConnectionTestResult>('/api/market/providers/test', {
+      method: 'POST',
+      body: JSON.stringify({ provider, symbol, timeframe }),
+    }),
+  getOhlcv: (
+    symbol: string,
+    timeframe: Timeframe,
+    allowDemo: boolean,
+    provider?: string,
+    refresh: boolean = false
+  ) => {
     const params = new URLSearchParams({
       symbol,
       timeframe,
       allow_demo: String(allowDemo),
+      refresh: String(refresh),
     })
     if (provider && provider !== 'auto') params.set('provider', provider)
     return request<MarketDataResponse>(`/api/market/ohlcv?${params.toString()}`)

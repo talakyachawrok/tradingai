@@ -112,3 +112,4 @@ class MarketDataResponse(BaseModel):
     candles: List[OHLCVCandle] = Field(default_factory=list)
     integrity: DataIntegrityReport
     unavailable_timeframes: List[Timeframe] = Field(default_factory=list)
+    cache_hit: bool = False

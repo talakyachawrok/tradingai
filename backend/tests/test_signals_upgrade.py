@@ -161,8 +161,8 @@ def test_confirmation_rules_and_beginner_explanations():
 
 
 @pytest.mark.asyncio
-async def test_signal_deduplication_and_notification_preferences(tmp_path, monkeypatch):
-    monkeypatch.setattr(get_settings(), "local_db_path", str(tmp_path / "sig_test.db"))
+async def test_signal_deduplication_and_notification_preferences():
+    db_store.reset()
     await db_store.initialize()
 
     ts = datetime(2026, 2, 15, 14, 0, tzinfo=timezone.utc)
@@ -251,8 +251,8 @@ def test_signal_tracking_tp_sl_expiry_and_ambiguous_intrabar():
     assert "SIGNAL EXPIRED" in (ev_exp or "")
 
 
-def test_signals_api_endpoints(tmp_path, monkeypatch):
-    monkeypatch.setattr(get_settings(), "local_db_path", str(tmp_path / "sig_api.db"))
+def test_signals_api_endpoints():
+    db_store.reset()
     webhook_cache_provider._store.clear()
     with TestClient(app) as client:
         ana = client.post(

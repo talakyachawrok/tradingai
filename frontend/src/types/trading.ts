@@ -115,6 +115,21 @@ export interface MarketDataResponse {
   unavailable_timeframes: Timeframe[]
   indicators?: IndicatorSnapshot
   overlays?: IndicatorChartOverlay
+  cache_hit?: boolean
+}
+
+export interface ProviderConnectionTestResult {
+  provider_name: string
+  connected: boolean
+  status: string
+  message: string
+  tested_symbol: string
+  tested_timeframe: string
+  latency_ms?: number | null
+  sample_price?: number | null
+  sample_timestamp?: string | null
+  requires_api_key: boolean
+  subscription_notes: string
 }
 
 export interface CandlestickPattern {

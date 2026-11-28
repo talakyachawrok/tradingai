@@ -61,7 +61,7 @@ async def run_full_analysis(
         allow_demo=allow_demo,
     )
     candles = primary_resp.candles
-    if len(candles) < 30:
+    if primary_resp.overview.connection_status == DataConnectionStatus.DATA_UNAVAILABLE or len(candles) < 30:
         raise ValueError(
             primary_resp.overview.status_message
             or f"Insufficient market data for {norm_symbol} ({timeframe.value}): found {len(candles)} candles (minimum 30 required)."

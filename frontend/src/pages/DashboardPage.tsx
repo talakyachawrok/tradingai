@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import React, { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertCircle,
@@ -54,21 +54,35 @@ export const DashboardPage: React.FC<Props> = ({
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [paperBusy, setPaperBusy] = useState(false)
   const [paperMsg, setPaperMsg] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [showDetailedReport, setShowDetailedReport] = useState(false)
   const [showAddSymbol, setShowAddSymbol] = useState(false)
   const [newSymbol, setNewSymbol] = useState('')
   const [newName, setNewName] = useState('')
   const [newAssetClass, setNewAssetClass] = useState('forex')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const queryClient = useQueryClient()
 
   const instrumentsQ = useQuery({
     queryKey: ['instruments'],
     queryFn: api.listInstruments,
   })
 
+  const settingsQ = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  })
+
+  useEffect(() => {
+    const savedProvider = settingsQ.data?.user_settings?.data_provider
+    if (savedProvider && provider === 'auto') {
+      setProvider(savedProvider)
+    }
+  }, [settingsQ.data?.user_settings?.data_provider])
+
   const marketQ = useQuery({
     queryKey: ['ohlcv', symbol, timeframe, allowDemo, provider],
-    queryFn: () => api.getOhlcv(symbol, timeframe, allowDemo, provider),
+    queryFn: () => api.getOhlcv(symbol, timeframe, allowDemo, provider, false),
     refetchInterval: 30000,
   })
 
@@ -78,10 +92,18 @@ export const DashboardPage: React.FC<Props> = ({
     refetchInterval: 60000,
   })
 
-  const settingsQ = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  })
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setAnalyzeError(null)
+    try {
+      const fresh = await api.getOhlcv(symbol, timeframe, allowDemo, provider, true)
+      queryClient.setQueryData(['ohlcv', symbol, timeframe, allowDemo, provider], fresh)
+    } catch (err: any) {
+      setAnalyzeError(err.message || 'Failed to refresh market data.')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const activeSpec: InstrumentSpec | undefined = instrumentsQ.data?.find(
     (i) => i.symbol === symbol
@@ -296,11 +318,13 @@ export const DashboardPage: React.FC<Props> = ({
           </button>
 
           <button
-            onClick={() => marketQ.refetch()}
-            className="p-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/40 text-terminal-muted hover:text-terminal-text transition"
-            title="Refresh market data"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/40 text-terminal-muted hover:text-terminal-text text-xs font-medium transition"
+            title="Force refresh live market data (bypasses cache)"
           >
-            <RefreshCw className={`w-4 h-4 ${marketQ.isFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${marketQ.isFetching || refreshing ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
 
           <button
@@ -381,9 +405,12 @@ export const DashboardPage: React.FC<Props> = ({
           </div>
         </div>
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-[11px] text-terminal-muted">Timeframe</div>
+          <div className="text-[11px] text-terminal-muted">Timeframe & Candles</div>
           <div className="text-sm font-bold mt-0.5">{timeframe.toUpperCase()}</div>
-          <div className="text-[11px] text-terminal-muted">{marketQ.data?.integrity.valid_count ?? 0} bars</div>
+          <div className="text-[11px] text-terminal-muted">
+            {marketQ.data?.integrity.valid_count ?? 0} candles
+            {marketQ.data?.cache_hit ? ' (cached)' : ''}
+          </div>
         </div>
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
           <div className="text-[11px] text-terminal-muted">Market Session</div>

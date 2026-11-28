@@ -78,14 +78,20 @@ async def test_ml_model_strict_unvalidated_until_trained():
         assert 0.0 <= (trained_pred.estimated_win_probability or 0.0) <= 1.0
 
 
-def test_api_endpoints_webhook_dedup_and_paper_trading(tmp_path, monkeypatch):
-    monkeypatch.setattr(db_store, "_sqlite_path", tmp_path / "test.db")
+def test_api_endpoints_webhook_dedup_and_paper_trading():
+    db_store.reset()
 
     with TestClient(app) as client:
-        # 1. Health check
+        # 1. Root /health and /api/health checks
+        root_h = client.get("/health")
+        assert root_h.status_code == 200
+        assert root_h.json()["status"] == "ok"
+        assert root_h.json()["storage"] == "ephemeral_in_memory"
+
         h = client.get("/api/health")
         assert h.status_code == 200
         assert h.json()["status"] == "ok"
+        assert h.json()["database"]["backend"] == "in_memory_ephemeral"
 
         # 2. Missing live data for XAUUSD does NOT fake live prices
         mkt = client.get("/api/market/ohlcv?symbol=XAUUSD&timeframe=1h&allow_demo=false")

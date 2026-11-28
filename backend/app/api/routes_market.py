@@ -2,6 +2,7 @@
 
 from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from app.core.instruments import InstrumentSpec, instrument_registry
 from app.data.manager import market_data_manager
 from app.indicators.engine import evaluate_indicators
@@ -35,6 +36,22 @@ async def list_providers():
     return [cap.model_dump(mode="json") for cap in market_data_manager.list_provider_capabilities()]
 
 
+class ProviderTestRequest(BaseModel):
+    provider: str = "twelvedata"
+    symbol: str = "XAUUSD"
+    timeframe: Timeframe = Timeframe.H1
+
+
+@router.post("/providers/test")
+async def test_provider_connection(req: ProviderTestRequest):
+    res = await market_data_manager.test_provider_connection(
+        provider_name=req.provider,
+        symbol=req.symbol,
+        timeframe=req.timeframe,
+    )
+    return res.__dict__
+
+
 @router.get("/ohlcv")
 async def get_ohlcv(
     symbol: str = "XAUUSD",
@@ -42,6 +59,7 @@ async def get_ohlcv(
     provider: Optional[str] = None,
     limit: int = 300,
     allow_demo: bool = False,
+    refresh: bool = False,
 ):
     resp = await market_data_manager.get_market_data(
         symbol=symbol,
@@ -49,6 +67,7 @@ async def get_ohlcv(
         provider_override=provider,
         limit=limit,
         allow_demo=allow_demo,
+        force_refresh=refresh,
     )
     ind_snap, overlays = evaluate_indicators(resp.candles)
     return {

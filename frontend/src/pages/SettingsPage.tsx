@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, CheckCircle2, Save, Settings as SettingsIcon, Volume2 } from 'lucide-react'
+import { Activity, Bell, CheckCircle2, Loader2, Save, Settings as SettingsIcon, Volume2, XCircle } from 'lucide-react'
 import { api } from '../services/api'
+import type { ProviderConnectionTestResult } from '../types/trading'
 import { playAlertSound, requestBrowserNotificationPermission } from '../utils/notifications'
 
 interface Props {
@@ -14,6 +15,9 @@ export const SettingsPage: React.FC<Props> = ({ theme, onToggleTheme }) => {
   const providersQ = useQuery({ queryKey: ['providers'], queryFn: api.listProviders })
   const [form, setForm] = useState<any>(null)
   const [savedMsg, setSavedMsg] = useState<string | null>(null)
+  const [testSymbol, setTestSymbol] = useState('XAUUSD')
+  const [testingProvider, setTestingProvider] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, ProviderConnectionTestResult>>({})
 
   useEffect(() => {
     if (settingsQ.data?.user_settings) {
@@ -27,6 +31,32 @@ export const SettingsPage: React.FC<Props> = ({ theme, onToggleTheme }) => {
     await api.saveSettings(form)
     setSavedMsg('Settings saved to database successfully.')
     settingsQ.refetch()
+    providersQ.refetch()
+  }
+
+  const handleTestProvider = async (providerName: string) => {
+    setTestingProvider(providerName)
+    try {
+      const sym = providerName === 'binance_public' ? 'BTCUSD' : testSymbol
+      const res = await api.testProviderConnection(providerName, sym, '1h')
+      setTestResults((prev) => ({ ...prev, [providerName]: res }))
+    } catch (err: any) {
+      setTestResults((prev) => ({
+        ...prev,
+        [providerName]: {
+          provider_name: providerName,
+          connected: false,
+          status: 'ERROR',
+          message: err.message || 'Connection test failed.',
+          tested_symbol: testSymbol,
+          tested_timeframe: '1h',
+          requires_api_key: true,
+          subscription_notes: '',
+        },
+      }))
+    } finally {
+      setTestingProvider(null)
+    }
   }
 
   const env = settingsQ.data?.environment
@@ -63,19 +93,107 @@ export const SettingsPage: React.FC<Props> = ({ theme, onToggleTheme }) => {
       {/* Environment & Provider Connection Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 text-xs">
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-4 space-y-3">
-          <h3 className="font-semibold uppercase text-terminal-muted">Provider & Integration Status</h3>
-          <div className="space-y-2">
-            {(providersQ.data || []).map((p: any) => (
-              <div key={p.name} className="p-2.5 rounded border border-terminal-border bg-terminal-elevated/40">
-                <div className="flex justify-between font-semibold">
-                  <span>{p.name}</span>
-                  <span className={p.configured ? 'text-emerald-400' : 'text-amber-400'}>
-                    {p.configured ? 'Configured' : 'API Key Missing'}
-                  </span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold uppercase text-terminal-muted">Provider & Connection Tester</h3>
+            <div className="flex items-center gap-2">
+              <select
+                aria-label="Test Symbol"
+                value={testSymbol}
+                onChange={(e) => setTestSymbol(e.target.value)}
+                className="px-2 py-1 rounded bg-terminal-elevated border border-terminal-border font-mono text-[11px]"
+              >
+                <option value="XAUUSD">XAUUSD</option>
+                <option value="EURUSD">EURUSD</option>
+                <option value="GBPUSD">GBPUSD</option>
+                <option value="BTCUSD">BTCUSD</option>
+              </select>
+              {form && (
+                <select
+                  aria-label="Default Active Provider"
+                  value={form.data_provider || 'auto'}
+                  onChange={(e) => setForm({ ...form, data_provider: e.target.value })}
+                  className="px-2 py-1 rounded bg-terminal-elevated border border-terminal-border text-[11px]"
+                >
+                  <option value="auto">Active: Auto</option>
+                  <option value="twelvedata">Active: TwelveData</option>
+                  <option value="alphavantage">Active: AlphaVantage</option>
+                  <option value="binance_public">Active: Binance Public</option>
+                  <option value="webhook_cache">Active: Webhook / CSV</option>
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {(providersQ.data || []).map((p: any) => {
+              const testRes = testResults[p.name]
+              const isTesting = testingProvider === p.name
+              return (
+                <div key={p.name} className="p-3 rounded-lg border border-terminal-border bg-terminal-elevated/40 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">{p.name}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          testRes
+                            ? testRes.connected
+                              ? 'bg-emerald-500/15 text-emerald-400'
+                              : 'bg-rose-500/15 text-rose-400'
+                            : p.configured
+                            ? 'bg-sky-500/15 text-sky-400'
+                            : 'bg-amber-500/15 text-amber-400'
+                        }`}
+                      >
+                        {testRes ? testRes.status : p.configured ? 'Configured' : 'API Key Missing'}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTestProvider(p.name)}
+                      disabled={isTesting}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-[11px] font-semibold transition"
+                    >
+                      {isTesting ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Activity className="w-3 h-3" />
+                      )}
+                      {isTesting ? 'Testing...' : 'Test API Connection'}
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-terminal-muted">{p.notes}</p>
+
+                  {testRes && (
+                    <div
+                      className={`p-2 rounded border text-[11px] space-y-0.5 ${
+                        testRes.connected
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                          : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        {testRes.connected ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        ) : (
+                          <XCircle className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                        <span>{testRes.message}</span>
+                      </div>
+                      {testRes.connected && (
+                        <div className="font-mono text-[10px] opacity-90">
+                          {testRes.tested_symbol} ({testRes.tested_timeframe}) · Price: {testRes.sample_price} · Updated: {testRes.sample_timestamp} · {testRes.latency_ms}ms
+                        </div>
+                      )}
+                      {testRes.subscription_notes && (
+                        <div className="text-[10px] opacity-85">{testRes.subscription_notes}</div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <p className="text-[11px] text-terminal-muted mt-0.5">{p.notes}</p>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
