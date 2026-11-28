@@ -40,15 +40,20 @@ class TwelveDataProvider(MarketDataProvider):
 
     def capabilities(self) -> ProviderCapability:
         settings = get_settings()
+        supported = [
+            inst.symbol
+            for inst in instrument_registry.list_instruments()
+            if "twelvedata" in inst.supported_providers or "twelvedata" in inst.provider_symbols
+        ]
         return ProviderCapability(
             name=self.name,
             configured=bool(settings.twelvedata_api_key.strip()),
             supports_live=True,
             supports_historical=True,
             supported_timeframes=list(TWELVEDATA_INTERVALS.keys()),
-            supported_symbols=["XAUUSD", "EURUSD", "GBPUSD", "BTCUSD"],
+            supported_symbols=supported,
             notes=(
-                "Primary Forex/Metals/Crypto provider (XAU/USD, EUR/USD, GBP/USD, BTC/USD). "
+                "Primary multi-asset provider (Forex, Crypto, Commodities, Indices, US Stocks). "
                 "Requires TWELVEDATA_API_KEY in .env (free Basic plan includes 8 credits/min, 800/day). "
                 "3m timeframe is not natively supported by TwelveData."
             ),

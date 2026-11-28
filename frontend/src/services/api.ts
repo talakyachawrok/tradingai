@@ -8,6 +8,7 @@ import type {
   PaperAccountSummary,
   PaperTradePosition,
   Timeframe,
+  ProviderCapability,
   ProviderConnectionTestResult,
   TradeAnalysisReport,
   TradeSignalRecord,
@@ -53,7 +54,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(spec),
     }),
-  listProviders: () => request<any[]>('/api/market/providers'),
+  listProviders: () => request<ProviderCapability[]>('/api/market/providers'),
   testProviderConnection: (provider: string, symbol: string = 'XAUUSD', timeframe: Timeframe = '1h') =>
     request<ProviderConnectionTestResult>('/api/market/providers/test', {
       method: 'POST',
@@ -64,13 +65,15 @@ export const api = {
     timeframe: Timeframe,
     allowDemo: boolean,
     provider?: string,
-    refresh: boolean = false
+    refresh: boolean = false,
+    limit: number = 300
   ) => {
     const params = new URLSearchParams({
       symbol,
       timeframe,
       allow_demo: String(allowDemo),
       refresh: String(refresh),
+      limit: String(limit),
     })
     if (provider && provider !== 'auto') params.set('provider', provider)
     return request<MarketDataResponse>(`/api/market/ohlcv?${params.toString()}`)
@@ -88,10 +91,16 @@ export const api = {
   getSessionsNews: (symbol: string) =>
     request<any>(`/api/market/sessions-news?symbol=${encodeURIComponent(symbol)}`),
 
-  runAnalysis: (symbol: string, timeframe: Timeframe, allowDemo: boolean, provider?: string) =>
+  runAnalysis: (
+    symbol: string,
+    timeframe: Timeframe,
+    allowDemo: boolean,
+    provider?: string,
+    limit: number = 300
+  ) =>
     request<TradeAnalysisReport>('/api/analysis/run', {
       method: 'POST',
-      body: JSON.stringify({ symbol, timeframe, allow_demo: allowDemo, provider }),
+      body: JSON.stringify({ symbol, timeframe, allow_demo: allowDemo, limit, provider }),
     }),
   listSignals: (filters: Record<string, string>) => {
     const params = new URLSearchParams()

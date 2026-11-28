@@ -10,6 +10,7 @@ import {
   createChart,
 } from 'lightweight-charts'
 import type {
+  ChartOverlaySettings,
   IndicatorChartOverlay,
   MarketOverview,
   OHLCVCandle,
@@ -23,6 +24,8 @@ interface Props {
   analysis?: TradeAnalysisReport | null
   theme: 'dark' | 'light'
   decimals?: number
+  chartSettings?: ChartOverlaySettings
+  onChangeChartSettings?: (next: ChartOverlaySettings) => void
 }
 
 export const CandlestickChart: React.FC<Props> = ({
@@ -32,14 +35,29 @@ export const CandlestickChart: React.FC<Props> = ({
   analysis,
   theme,
   decimals = 5,
+  chartSettings,
+  onChangeChartSettings,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const [showEma20, setShowEma20] = useState(true)
-  const [showEma50, setShowEma50] = useState(true)
-  const [showEma200, setShowEma200] = useState(true)
-  const [showLevels, setShowLevels] = useState(true)
-  const [showTradeLines, setShowTradeLines] = useState(true)
+  const [localSettings, setLocalSettings] = useState<ChartOverlaySettings>({
+    showEma20: true,
+    showEma50: true,
+    showEma200: true,
+    showLevels: true,
+    showTradeLines: true,
+  })
+  const activeSettings = chartSettings || localSettings
+  const updateSetting = (key: keyof ChartOverlaySettings) => {
+    const next = { ...activeSettings, [key]: !activeSettings[key] }
+    if (onChangeChartSettings) onChangeChartSettings(next)
+    else setLocalSettings(next)
+  }
+  const showEma20 = activeSettings.showEma20
+  const showEma50 = activeSettings.showEma50
+  const showEma200 = activeSettings.showEma200
+  const showLevels = activeSettings.showLevels
+  const showTradeLines = activeSettings.showTradeLines
   const [hoverOhlc, setHoverOhlc] = useState<OHLCVCandle | null>(null)
 
   useEffect(() => {
@@ -308,11 +326,11 @@ export const CandlestickChart: React.FC<Props> = ({
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           {[
-            { label: 'EMA 20', active: showEma20, toggle: () => setShowEma20((v) => !v), color: 'text-sky-400' },
-            { label: 'EMA 50', active: showEma50, toggle: () => setShowEma50((v) => !v), color: 'text-amber-400' },
-            { label: 'EMA 200', active: showEma200, toggle: () => setShowEma200((v) => !v), color: 'text-purple-400' },
-            { label: 'S/R & FVG', active: showLevels, toggle: () => setShowLevels((v) => !v), color: 'text-emerald-400' },
-            { label: 'SL/TP Lines', active: showTradeLines, toggle: () => setShowTradeLines((v) => !v), color: 'text-rose-400' },
+            { label: 'EMA 20', active: showEma20, toggle: () => updateSetting('showEma20'), color: 'text-sky-400' },
+            { label: 'EMA 50', active: showEma50, toggle: () => updateSetting('showEma50'), color: 'text-amber-400' },
+            { label: 'EMA 200', active: showEma200, toggle: () => updateSetting('showEma200'), color: 'text-purple-400' },
+            { label: 'S/R & FVG', active: showLevels, toggle: () => updateSetting('showLevels'), color: 'text-emerald-400' },
+            { label: 'SL/TP Lines', active: showTradeLines, toggle: () => updateSetting('showTradeLines'), color: 'text-rose-400' },
           ].map((btn) => (
             <button
               key={btn.label}

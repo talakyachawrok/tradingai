@@ -262,7 +262,20 @@ class MarketDataManager:
             if preferred == "demo_historical" and not allow_demo:
                 pass
             else:
-                return await self.providers[preferred].fetch_candles(symbol, timeframe, limit)
+                target_provider = self.providers[preferred]
+                caps = target_provider.capabilities()
+                if caps.supported_symbols and symbol not in caps.supported_symbols:
+                    inst = instrument_registry.get(symbol)
+                    if not (inst and preferred in inst.provider_symbols):
+                        return ProviderFetchResult(
+                            provider_name=preferred,
+                            connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
+                            error_message=f"{symbol} is not supported by provider '{preferred}'. Switch provider to Auto or select a supported symbol.",
+                            unavailable_timeframes=[
+                                tf for tf in Timeframe if tf not in caps.supported_timeframes
+                            ],
+                        )
+                return await target_provider.fetch_candles(symbol, timeframe, limit)
 
         # Auto selection order: webhook_cache (if populated) -> configured live providers -> binance_public (crypto) -> demo (only if explicitly allowed)
         errors: List[str] = []

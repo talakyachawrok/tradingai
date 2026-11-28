@@ -248,3 +248,83 @@ async def test_binance_451_geo_fallback_to_kraken(monkeypatch):
     assert res.connection_status == DataConnectionStatus.LIVE
     assert "kraken_public" in res.provider_name
     assert len(res.raw_candles) == 5
+
+
+def test_expanded_instrument_catalog_and_mappings():
+    from app.core.instruments import instrument_registry, normalize_symbol
+
+    instruments = instrument_registry.list_instruments()
+    assert len(instruments) >= 60
+
+    categories = {item.asset_class for item in instruments}
+    assert {"forex", "crypto", "commodities", "indices", "stocks"}.issubset(categories)
+
+    assert normalize_symbol("SPX500") == "US500"
+    assert normalize_symbol("US100") == "NAS100"
+    assert normalize_symbol("USOIL") == "WTI"
+    assert normalize_symbol("UKOIL") == "BRENT"
+    assert normalize_symbol("BTCUSDT") == "BTCUSDT"
+    assert resolve_twelvedata_symbol("US500") == "SPX"
+    assert resolve_twelvedata_symbol("AAPL") == "AAPL"
+
+
+@pytest.mark.asyncio
+async def test_unsupported_provider_symbol_guard():
+    mgr = MarketDataManager()
+    resp = await mgr.get_market_data(
+        "AAPL",
+        Timeframe.H1,
+        provider_override="binance_public",
+        allow_demo=False,
+    )
+    assert resp.overview.connection_status == DataConnectionStatus.DATA_UNAVAILABLE
+    assert "not supported" in resp.overview.status_message.lower()
+
+
+def test_expanded_market_instruments_and_analysis_limit_routes():
+    db_store.reset()
+    with TestClient(app) as client:
+        inst_resp = client.get("/api/market/instruments")
+        assert inst_resp.status_code == 200
+        inst_list = inst_resp.json()
+        assert len(inst_list) >= 60
+        assert {item["asset_class"] for item in inst_list}.issuperset(
+            {"forex", "crypto", "commodities", "indices", "stocks"}
+        )
+
+        prov_resp = client.get("/api/market/providers")
+        assert prov_resp.status_code == 200
+        providers_by_name = {p["name"]: p for p in prov_resp.json()}
+        assert "ETHUSD" in providers_by_name["binance_public"]["supported_symbols"]
+        assert "AAPL" not in providers_by_name["binance_public"]["supported_symbols"]
+        assert "AAPL" in providers_by_name["twelvedata"]["supported_symbols"]
+
+        for sym in ("ETHUSD", "AAPL"):
+            ohlcv_resp = client.get(
+                f"/api/market/ohlcv?symbol={sym}&timeframe=1h&limit=120&allow_demo=true"
+            )
+            assert ohlcv_resp.status_code == 200
+            assert len(ohlcv_resp.json()["candles"]) == 120
+
+            ana_resp = client.post(
+                "/api/analysis/run",
+                json={
+                    "symbol": sym,
+                    "timeframe": "1h",
+                    "allow_demo": True,
+                    "limit": 120,
+                },
+            )
+            assert ana_resp.status_code == 200
+            payload = ana_resp.json()
+            assert payload["symbol"] == sym
+            assert len(payload["overlays"]["timestamps"]) == 120
+            assert payload["signal_status"] in {
+                "BUY SIGNAL",
+                "SELL SIGNAL",
+                "WAIT FOR CONFIRMATION",
+                "NO TRADE",
+                "SETUP FORMING",
+                "SCANNING",
+            }
+

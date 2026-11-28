@@ -2,7 +2,7 @@
 
 from typing import Optional
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.analysis.pipeline import run_full_analysis
 from app.database.repositories import repo
 from app.models.analysis import PositionSizeRequest
@@ -19,6 +19,7 @@ class AnalyzeMarketRequest(BaseModel):
     timeframe: Timeframe = Timeframe.H1
     provider: Optional[str] = None
     allow_demo: bool = False
+    limit: int = Field(default=300, ge=60, le=1000)
 
 
 @router.post("/run")
@@ -31,6 +32,7 @@ async def analyze_market(req: AnalyzeMarketRequest):
             timeframe=req.timeframe,
             provider_override=req.provider,
             allow_demo=req.allow_demo,
+            limit=req.limit,
             paper_account=paper_summary,
             news_blackout_active=bool(news_info.get("blackout_active")),
             news_blackout_reason=str(news_info.get("blackout_reason", "")),

@@ -45,14 +45,19 @@ class BinancePublicProvider(MarketDataProvider):
     KRAKEN_URL = "https://api.kraken.com/0/public/OHLC"
 
     def capabilities(self) -> ProviderCapability:
+        supported = [
+            inst.symbol
+            for inst in instrument_registry.list_instruments()
+            if "binance_public" in inst.supported_providers or "binance_public" in inst.provider_symbols
+        ]
         return ProviderCapability(
             name=self.name,
             configured=True,
             supports_live=True,
             supports_historical=True,
             supported_timeframes=list(BINANCE_INTERVALS.keys()),
-            supported_symbols=["BTCUSD"],
-            notes="Public REST klines for BTCUSD (auto-falls back to Binance.US / Kraken on HTTP 451 regions). No API key required.",
+            supported_symbols=supported,
+            notes="Public REST klines for major Crypto pairs (auto-falls back to Binance.US / Kraken on HTTP 451 regions). No API key required.",
         )
 
     async def fetch_candles(
@@ -129,13 +134,14 @@ class BinancePublicProvider(MarketDataProvider):
 
         # Fallback to Kraken public OHLC (works globally, including US Render servers)
         kraken_interval = KRAKEN_INTERVALS.get(timeframe)
-        if kraken_interval is not None:
+        kraken_pair = spec.provider_symbols.get("kraken_public") if spec else None
+        if kraken_interval is not None and kraken_pair:
             try:
-                logger.info("Falling back to Kraken public OHLC for BTCUSD interval=%sm", kraken_interval)
+                logger.info("Falling back to Kraken public OHLC for %s (%s) interval=%sm", norm, kraken_pair, kraken_interval)
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.get(
                         self.KRAKEN_URL,
-                        params={"pair": "XBTUSD", "interval": kraken_interval},
+                        params={"pair": kraken_pair, "interval": kraken_interval},
                     )
                 resp.raise_for_status()
                 payload = resp.json()
@@ -155,7 +161,7 @@ class BinancePublicProvider(MarketDataProvider):
                             }
                             for row in rows
                         ]
-                        logger.info("Kraken fetched %d candles for BTCUSD (%s)", len(candles), timeframe.value)
+                        logger.info("Kraken fetched %d candles for %s (%s)", len(candles), norm, timeframe.value)
                         return ProviderFetchResult(
                             provider_name="kraken_public (binance fallback)",
                             connection_status=DataConnectionStatus.LIVE,

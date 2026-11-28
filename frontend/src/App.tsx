@@ -16,6 +16,7 @@ import {
   Webhook,
   X,
 } from 'lucide-react'
+import { AnalyzerProvider, useAnalyzer } from './context/AnalyzerContext'
 import { BacktestPage } from './pages/BacktestPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { JournalPage } from './pages/JournalPage'
@@ -39,7 +40,6 @@ type NavTab =
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-  const [allowDemo, setAllowDemo] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
 
@@ -56,7 +56,49 @@ export const App: React.FC = () => {
     refetchInterval: 15000,
   })
 
-  const unreadCount = (notifQ.data || []).filter((n) => !n.read).length
+  return (
+    <AnalyzerProvider onNotificationRefresh={() => notifQ.refetch()}>
+      <AppShell
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        theme={theme}
+        setTheme={setTheme}
+        mobileMenuOpen={mobileMenuOpen}
+        setMobileMenuOpen={setMobileMenuOpen}
+        notifOpen={notifOpen}
+        setNotifOpen={setNotifOpen}
+        healthQ={healthQ}
+        notifQ={notifQ}
+      />
+    </AnalyzerProvider>
+  )
+}
+
+const AppShell: React.FC<{
+  activeTab: NavTab
+  setActiveTab: (t: NavTab) => void
+  theme: 'dark' | 'light'
+  setTheme: React.Dispatch<React.SetStateAction<'dark' | 'light'>>
+  mobileMenuOpen: boolean
+  setMobileMenuOpen: (v: boolean) => void
+  notifOpen: boolean
+  setNotifOpen: React.Dispatch<React.SetStateAction<boolean>>
+  healthQ: any
+  notifQ: any
+}> = ({
+  activeTab,
+  setActiveTab,
+  theme,
+  setTheme,
+  mobileMenuOpen,
+  setMobileMenuOpen,
+  notifOpen,
+  setNotifOpen,
+  healthQ,
+  notifQ,
+}) => {
+  const { allowDemo } = useAnalyzer()
+  const unreadCount = (notifQ.data || []).filter((n: any) => !n.read).length
 
   const navItems: Array<{ id: NavTab; label: string; icon: React.ComponentType<any> }> = [
     { id: 'dashboard', label: 'Market Analyzer', icon: ChartIcon },
@@ -192,7 +234,7 @@ export const App: React.FC = () => {
                   {(notifQ.data || []).length === 0 ? (
                     <p className="text-terminal-muted py-4 text-center">No notifications yet.</p>
                   ) : (
-                    notifQ.data?.slice(0, 15).map((n) => (
+                    notifQ.data?.slice(0, 15).map((n: any) => (
                       <div
                         key={n.id}
                         onClick={async () => {
@@ -222,8 +264,6 @@ export const App: React.FC = () => {
           {activeTab === 'dashboard' && (
             <DashboardPage
               theme={theme}
-              allowDemo={allowDemo}
-              setAllowDemo={setAllowDemo}
               onNotificationRefresh={() => notifQ.refetch()}
             />
           )}

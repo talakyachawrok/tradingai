@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
-from app.core.instruments import normalize_symbol
+from app.core.instruments import instrument_registry, normalize_symbol
 from app.data.base import MarketDataProvider, ProviderConnectionTestResult, ProviderFetchResult
 from app.models.market import DataConnectionStatus, ProviderCapability, Timeframe
 
@@ -37,7 +37,7 @@ class WebhookCacheProvider(MarketDataProvider):
             supports_live=False,
             supports_historical=True,
             supported_timeframes=list(Timeframe),
-            supported_symbols=["XAUUSD", "EURUSD", "GBPUSD", "BTCUSD"],
+            supported_symbols=[i.symbol for i in instrument_registry.list_instruments()],
             notes="Populated from TradingView webhook payloads or user-uploaded OHLCV CSV files.",
         )
 

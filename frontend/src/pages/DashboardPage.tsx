@@ -1,26 +1,27 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import React, { useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   AlertCircle,
+  AlertTriangle,
   Brain,
   Database,
   Globe,
+  Loader2,
   Play,
   Plus,
+  Radio,
   RefreshCw,
+  RotateCcw,
   Upload,
 } from 'lucide-react'
 import { CandlestickChart } from '../charts/CandlestickChart'
 import { AITradeSignalCard } from '../components/AITradeSignalCard'
 import { AnalysisReportCard } from '../components/AnalysisReportCard'
+import { MarketSelector } from '../components/MarketSelector'
+import { useAnalyzer } from '../context/AnalyzerContext'
 import { api } from '../services/api'
-import { playAlertSound, showBrowserNotification } from '../utils/notifications'
-import type {
-  InstrumentSpec,
-  Timeframe,
-  TradeAnalysisReport,
-} from '../types/trading'
+import type { InstrumentSpec, Timeframe, TradeAnalysisReport } from '../types/trading'
 
 const TIMEFRAMES: Array<{ value: Timeframe; label: string }> = [
   { value: '1m', label: '1m' },
@@ -35,55 +36,67 @@ const TIMEFRAMES: Array<{ value: Timeframe; label: string }> = [
 
 interface Props {
   theme: 'dark' | 'light'
-  allowDemo: boolean
-  setAllowDemo: (v: boolean) => void
   onNotificationRefresh: () => void
 }
 
-export const DashboardPage: React.FC<Props> = ({
-  theme,
-  allowDemo,
-  setAllowDemo,
-  onNotificationRefresh,
-}) => {
-  const [symbol, setSymbol] = useState('XAUUSD')
-  const [timeframe, setTimeframe] = useState<Timeframe>('1h')
-  const [provider, setProvider] = useState('auto')
-  const [analysis, setAnalysis] = useState<TradeAnalysisReport | null>(null)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+export const DashboardPage: React.FC<Props> = ({ theme, onNotificationRefresh }) => {
+  const {
+    symbol,
+    category,
+    timeframe,
+    provider,
+    candleLimit,
+    allowDemo,
+    autoUpdateEnabled,
+    pollingIntervalSec,
+    candleCloseOnlyReeval,
+    chartSettings,
+    favorites,
+    analysis,
+    marketData,
+    isLoadingMarket,
+    isUpdatingMarket,
+    analyzing,
+    analyzeError,
+    connectionError,
+    consecutiveErrors,
+    lastUpdatedAt,
+    setSymbol,
+    setCategory,
+    setTimeframe,
+    setProvider,
+    setCandleLimit,
+    setAllowDemo,
+    setAutoUpdateEnabled,
+    setPollingIntervalSec,
+    setCandleCloseOnlyReeval,
+    setChartSettings,
+    toggleFavorite,
+    runManualAnalysis,
+    refreshMarketData,
+    resetAnalyzer,
+  } = useAnalyzer()
+
   const [paperBusy, setPaperBusy] = useState(false)
   const [paperMsg, setPaperMsg] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const [csvError, setCsvError] = useState<string | null>(null)
   const [showDetailedReport, setShowDetailedReport] = useState(false)
   const [showAddSymbol, setShowAddSymbol] = useState(false)
   const [newSymbol, setNewSymbol] = useState('')
   const [newName, setNewName] = useState('')
   const [newAssetClass, setNewAssetClass] = useState('forex')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const queryClient = useQueryClient()
 
   const instrumentsQ = useQuery({
     queryKey: ['instruments'],
     queryFn: api.listInstruments,
+    staleTime: 60000,
   })
 
-  const settingsQ = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  })
-
-  useEffect(() => {
-    const savedProvider = settingsQ.data?.user_settings?.data_provider
-    if (savedProvider && provider === 'auto') {
-      setProvider(savedProvider)
-    }
-  }, [settingsQ.data?.user_settings?.data_provider])
-
-  const marketQ = useQuery({
-    queryKey: ['ohlcv', symbol, timeframe, allowDemo, provider],
-    queryFn: () => api.getOhlcv(symbol, timeframe, allowDemo, provider, false),
-    refetchInterval: 30000,
+  const providersQ = useQuery({
+    queryKey: ['providers'],
+    queryFn: api.listProviders,
+    staleTime: 60000,
   })
 
   const newsQ = useQuery({
@@ -92,68 +105,22 @@ export const DashboardPage: React.FC<Props> = ({
     refetchInterval: 60000,
   })
 
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    setAnalyzeError(null)
-    try {
-      const fresh = await api.getOhlcv(symbol, timeframe, allowDemo, provider, true)
-      queryClient.setQueryData(['ohlcv', symbol, timeframe, allowDemo, provider], fresh)
-    } catch (err: any) {
-      setAnalyzeError(err.message || 'Failed to refresh market data.')
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
   const activeSpec: InstrumentSpec | undefined = instrumentsQ.data?.find(
     (i) => i.symbol === symbol
   )
-  const decimals = activeSpec?.decimals ?? (symbol.includes('JPY') ? 3 : symbol === 'XAUUSD' || symbol === 'BTCUSD' ? 2 : 5)
-
-  const handleAnalyze = async () => {
-    setAnalyzing(true)
-    setAnalyzeError(null)
-    setPaperMsg(null)
-    try {
-      const report = await api.runAnalysis(symbol, timeframe, allowDemo, provider)
-      setAnalysis(report)
-      onNotificationRefresh()
-
-      const alertsCfg = settingsQ.data?.user_settings?.alerts
-      const isQualifying =
-        report.signal_status === 'BUY SIGNAL' || report.signal_status === 'SELL SIGNAL'
-      if (isQualifying) {
-        const allowDir =
-          (report.signal_status === 'BUY SIGNAL' && (alertsCfg?.enable_buy_alerts ?? true)) ||
-          (report.signal_status === 'SELL SIGNAL' && (alertsCfg?.enable_sell_alerts ?? true))
-        if (allowDir) {
-          if (alertsCfg?.sound_enabled ?? true) {
-            playAlertSound()
-          }
-          if (alertsCfg?.browser_notifications_enabled ?? true) {
-            showBrowserNotification(
-              `AI TRADING ANALYZER: ${report.signal_status} — ${report.symbol}`,
-              `Timeframe: ${report.timeframe} | Entry: ${report.trade_levels.entry_price ?? 'N/A'} | SL: ${report.trade_levels.stop_loss ?? 'N/A'} | TP1: ${report.trade_levels.take_profit_1 ?? 'N/A'}`
-            )
-          }
-        }
-      }
-    } catch (err: any) {
-      setAnalyzeError(err.message || 'Analysis failed.')
-    } finally {
-      setAnalyzing(false)
-    }
-  }
+  const decimals =
+    activeSpec?.decimals ??
+    (symbol.includes('JPY') ? 3 : symbol === 'XAUUSD' || symbol === 'BTCUSD' ? 2 : 5)
 
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setAnalyzeError(null)
+    setCsvError(null)
     try {
       await api.uploadCsv(symbol, timeframe, file)
-      await marketQ.refetch()
+      await refreshMarketData()
     } catch (err: any) {
-      setAnalyzeError(err.message)
+      setCsvError(err.message)
     } finally {
       e.target.value = ''
     }
@@ -206,9 +173,19 @@ export const DashboardPage: React.FC<Props> = ({
     }
   }
 
-  const overview = marketQ.data?.overview
-  const indicators = marketQ.data?.indicators
-  const unavailableTfs = marketQ.data?.unavailable_timeframes || []
+  const overview = marketData?.overview
+  const indicators = marketData?.indicators
+  const unavailableTfs = marketData?.unavailable_timeframes || []
+  const isStaleData = Boolean(marketData?.integrity?.is_stale && !overview?.is_demo)
+
+  const activeProviderCap =
+    provider !== 'auto'
+      ? (providersQ.data || []).find((p) => p.name === provider)
+      : undefined
+  const providerUnsupportedSymbol =
+    activeProviderCap &&
+    activeProviderCap.supported_symbols.length > 0 &&
+    !activeProviderCap.supported_symbols.includes(symbol)
 
   const statusTone =
     overview?.connection_status === 'LIVE'
@@ -222,119 +199,209 @@ export const DashboardPage: React.FC<Props> = ({
   return (
     <div className="space-y-5">
       {/* Controls Bar */}
-      <div className="rounded-xl border border-terminal-border bg-terminal-panel p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Market Selector */}
-          <div className="flex items-center gap-1">
+      <div className="rounded-xl border border-terminal-border bg-terminal-panel p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Searchable Categorized Market Selector */}
+            <div className="flex items-center gap-1">
+              <MarketSelector
+                instruments={instrumentsQ.data || []}
+                providers={providersQ.data || []}
+                selectedSymbol={symbol}
+                selectedCategory={category}
+                selectedProvider={provider}
+                favorites={favorites}
+                onSelectSymbol={setSymbol}
+                onSelectCategory={setCategory}
+                onToggleFavorite={toggleFavorite}
+              />
+              <button
+                onClick={() => setShowAddSymbol((v) => !v)}
+                title="Add custom symbol"
+                className="p-2.5 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/50 text-terminal-muted hover:text-terminal-text transition"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Timeframe Selector */}
+            <div className="flex flex-wrap items-center gap-1 bg-terminal-elevated p-1 rounded-lg border border-terminal-border">
+              {TIMEFRAMES.map((tf) => {
+                const isUnavailable = unavailableTfs.includes(tf.value)
+                return (
+                  <button
+                    key={tf.value}
+                    onClick={() => setTimeframe(tf.value)}
+                    title={isUnavailable ? `${tf.label} unavailable on active provider` : tf.label}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition ${
+                      timeframe === tf.value
+                        ? 'bg-sky-600 text-white'
+                        : isUnavailable
+                        ? 'text-terminal-muted/40 line-through'
+                        : 'text-terminal-muted hover:text-terminal-text'
+                    }`}
+                  >
+                    {tf.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Provider & Candle Count */}
             <select
-              aria-label="Market Selector"
-              value={symbol}
-              onChange={(e) => {
-                setSymbol(e.target.value)
-                setAnalysis(null)
-              }}
-              className="px-3 py-2 rounded-lg bg-terminal-elevated border border-terminal-border text-sm font-semibold"
+              aria-label="Data Provider"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="px-2.5 py-2 rounded-lg bg-terminal-elevated border border-terminal-border text-xs"
             >
-              {(instrumentsQ.data || [{ symbol: 'XAUUSD', display_name: 'Gold / USD' }]).map((inst) => (
-                <option key={inst.symbol} value={inst.symbol}>
-                  {inst.symbol} — {inst.display_name}
-                </option>
-              ))}
+              <option value="auto">Provider: Auto</option>
+              <option value="binance_public">Binance / Kraken (Crypto)</option>
+              <option value="twelvedata">TwelveData (Multi-Asset)</option>
+              <option value="alphavantage">AlphaVantage (FX)</option>
+              <option value="webhook_cache">Webhook / CSV Cache</option>
             </select>
-            <button
-              onClick={() => setShowAddSymbol((v) => !v)}
-              title="Add configurable symbol"
-              className="p-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/50 text-terminal-muted hover:text-terminal-text transition"
+
+            <select
+              aria-label="Candle Count"
+              value={candleLimit}
+              onChange={(e) => setCandleLimit(Number(e.target.value))}
+              className="px-2.5 py-2 rounded-lg bg-terminal-elevated border border-terminal-border text-xs font-mono"
             >
-              <Plus className="w-4 h-4" />
+              <option value={100}>100 candles</option>
+              <option value={200}>200 candles</option>
+              <option value={300}>300 candles</option>
+              <option value={500}>500 candles</option>
+            </select>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-terminal-border bg-terminal-elevated text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allowDemo}
+                onChange={(e) => setAllowDemo(e.target.checked)}
+                className="rounded accent-amber-500"
+              />
+              <span>Demo Historical Mode</span>
+            </label>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleCsvUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/40 text-xs font-medium transition"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Upload CSV
+            </button>
+
+            <button
+              onClick={refreshMarketData}
+              disabled={isUpdatingMarket}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/40 text-terminal-muted hover:text-terminal-text text-xs font-medium transition"
+              title="Manual refresh (bypasses cache)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isUpdatingMarket ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+
+            <button
+              onClick={resetAnalyzer}
+              title="Reset saved Analyzer state"
+              className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-rose-500/40 text-terminal-muted hover:text-rose-300 text-xs transition"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset</span>
+            </button>
+
+            <button
+              onClick={runManualAnalysis}
+              disabled={analyzing || !marketData?.candles?.length}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 text-white text-xs font-bold tracking-wide transition shadow-sm"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              {analyzing ? 'ANALYZING...' : 'ANALYZE MARKET'}
             </button>
           </div>
-
-          {/* Timeframe Selector */}
-          <div className="flex flex-wrap items-center gap-1 bg-terminal-elevated p-1 rounded-lg border border-terminal-border">
-            {TIMEFRAMES.map((tf) => {
-              const isUnavailable = unavailableTfs.includes(tf.value)
-              return (
-                <button
-                  key={tf.value}
-                  onClick={() => {
-                    setTimeframe(tf.value)
-                    setAnalysis(null)
-                  }}
-                  title={isUnavailable ? `${tf.label} unavailable on active provider` : tf.label}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition ${
-                    timeframe === tf.value
-                      ? 'bg-sky-600 text-white'
-                      : isUnavailable
-                      ? 'text-terminal-muted/40 line-through'
-                      : 'text-terminal-muted hover:text-terminal-text'
-                  }`}
-                >
-                  {tf.label}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Provider Selector */}
-          <select
-            aria-label="Data Provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            className="px-2.5 py-2 rounded-lg bg-terminal-elevated border border-terminal-border text-xs"
-          >
-            <option value="auto">Provider: Auto</option>
-            <option value="binance_public">Binance Public (BTC)</option>
-            <option value="twelvedata">TwelveData</option>
-            <option value="alphavantage">AlphaVantage</option>
-            <option value="webhook_cache">Webhook / CSV Cache</option>
-          </select>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-terminal-border bg-terminal-elevated text-xs cursor-pointer">
-            <input
-              type="checkbox"
-              checked={allowDemo}
-              onChange={(e) => setAllowDemo(e.target.checked)}
-              className="rounded accent-amber-500"
-            />
-            <span>Demo Historical Mode</span>
-          </label>
+        {/* Automatic Live Update & Telemetry Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-terminal-border/60 text-xs">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoUpdateEnabled}
+                onChange={(e) => setAutoUpdateEnabled(e.target.checked)}
+                className="rounded accent-emerald-500"
+              />
+              <span className="font-medium">Auto-Update & Signal Re-eval</span>
+            </label>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleCsvUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/40 text-xs font-medium transition"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Upload OHLC CSV
-          </button>
+            <select
+              aria-label="Polling Interval"
+              value={pollingIntervalSec}
+              onChange={(e) => setPollingIntervalSec(Number(e.target.value))}
+              disabled={!autoUpdateEnabled}
+              className="px-2 py-1 rounded bg-terminal-elevated border border-terminal-border text-[11px] font-mono disabled:opacity-50"
+            >
+              <option value={5}>Every 5s</option>
+              <option value={10}>Every 10s</option>
+              <option value={15}>Every 15s</option>
+              <option value={30}>Every 30s</option>
+            </select>
 
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-terminal-border bg-terminal-elevated hover:border-sky-500/40 text-terminal-muted hover:text-terminal-text text-xs font-medium transition"
-            title="Force refresh live market data (bypasses cache)"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${marketQ.isFetching || refreshing ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
+            <label
+              className="inline-flex items-center gap-1.5 text-[11px] text-terminal-muted cursor-pointer"
+              title="Only trigger full AI/signal re-evaluation when a new candle closes/arrives"
+            >
+              <input
+                type="checkbox"
+                checked={candleCloseOnlyReeval}
+                onChange={(e) => setCandleCloseOnlyReeval(e.target.checked)}
+                className="rounded accent-sky-500"
+              />
+              <span>Re-evaluate on new candle close</span>
+            </label>
+          </div>
 
-          <button
-            onClick={handleAnalyze}
-            disabled={analyzing || !marketQ.data?.candles?.length}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 text-white text-xs font-bold tracking-wide transition shadow-sm"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            {analyzing ? 'ANALYZING...' : 'ANALYZE MARKET'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5 text-[11px]">
+            {isUpdatingMarket && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 font-semibold">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Updating...
+              </span>
+            )}
+            {consecutiveErrors > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-semibold">
+                <AlertTriangle className="w-3 h-3" />
+                Recovering ({consecutiveErrors})
+              </span>
+            )}
+            {overview?.connection_status === 'LIVE' && !isStaleData && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">
+                <Radio className="w-3 h-3 animate-pulse" />
+                LIVE
+              </span>
+            )}
+            {isStaleData && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
+                <AlertTriangle className="w-3 h-3" />
+                STALE DATA
+              </span>
+            )}
+            <span className="text-terminal-muted font-mono">
+              Synced:{' '}
+              {lastUpdatedAt
+                ? new Date(lastUpdatedAt).toISOString().slice(11, 19) + ' UTC'
+                : 'Pending'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -372,8 +439,9 @@ export const DashboardPage: React.FC<Props> = ({
             >
               <option value="forex">Forex</option>
               <option value="crypto">Crypto</option>
-              <option value="metals">Metals</option>
+              <option value="commodities">Commodities</option>
               <option value="indices">Indices</option>
+              <option value="stocks">Stocks</option>
             </select>
           </label>
           <button type="submit" className="px-4 py-2 rounded-lg bg-sky-600 text-white font-semibold">
@@ -387,7 +455,9 @@ export const DashboardPage: React.FC<Props> = ({
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
           <div className="text-[11px] text-terminal-muted">Market</div>
           <div className="text-sm font-bold mt-0.5">{overview?.symbol || symbol}</div>
-          <div className="text-[11px] text-terminal-muted truncate">{overview?.display_name}</div>
+          <div className="text-[11px] text-terminal-muted truncate">
+            {overview?.display_name || activeSpec?.display_name}
+          </div>
         </div>
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
           <div className="text-[11px] text-terminal-muted">Current Price</div>
@@ -408,8 +478,8 @@ export const DashboardPage: React.FC<Props> = ({
           <div className="text-[11px] text-terminal-muted">Timeframe & Candles</div>
           <div className="text-sm font-bold mt-0.5">{timeframe.toUpperCase()}</div>
           <div className="text-[11px] text-terminal-muted">
-            {marketQ.data?.integrity.valid_count ?? 0} candles
-            {marketQ.data?.cache_hit ? ' (cached)' : ''}
+            {marketData?.integrity.valid_count ?? 0} candles
+            {marketData?.cache_hit ? ' (cached)' : ''}
           </div>
         </div>
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
@@ -419,7 +489,7 @@ export const DashboardPage: React.FC<Props> = ({
         </div>
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
           <div className="text-[11px] text-terminal-muted">Data Source</div>
-          <div className="text-xs font-semibold mt-0.5">{overview?.data_source || 'none'}</div>
+          <div className="text-xs font-semibold mt-0.5 truncate">{overview?.data_source || 'none'}</div>
           <span className={`inline-block mt-1 px-1.5 py-0.5 rounded border text-[10px] font-bold ${statusTone}`}>
             {overview?.connection_status || 'DATA_UNAVAILABLE'}
           </span>
@@ -445,7 +515,25 @@ export const DashboardPage: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Banners for errors / demo / paper feedback */}
+      {/* Banners for unsupported provider/symbol, stale data, errors, demo, or paper feedback */}
+      {providerUnsupportedSymbol && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>{symbol}</strong> is not supported by provider <strong>{provider}</strong>. Switch Provider to <strong>Auto</strong> or select a supported instrument.
+          </span>
+        </div>
+      )}
+
+      {isStaleData && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>STALE DATA WARNING:</strong> Market candles are {marketData?.integrity.stale_seconds}s old. BUY/SELL signals are paused until fresh data arrives.
+          </span>
+        </div>
+      )}
+
       {overview?.is_demo && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300 flex items-center gap-2">
           <Database className="w-4 h-4 shrink-0" />
@@ -455,16 +543,16 @@ export const DashboardPage: React.FC<Props> = ({
         </div>
       )}
 
-      {(analyzeError || paperMsg) && (
+      {(analyzeError || csvError || connectionError || paperMsg) && (
         <div
           className={`rounded-lg border px-4 py-2.5 text-xs flex items-center gap-2 ${
-            analyzeError || paperMsg?.startsWith('Paper trade blocked')
+            analyzeError || csvError || connectionError || paperMsg?.startsWith('Paper trade blocked')
               ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
               : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
           }`}
         >
           <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{analyzeError || paperMsg}</span>
+          <span>{analyzeError || csvError || connectionError || paperMsg}</span>
         </div>
       )}
 
@@ -472,7 +560,7 @@ export const DashboardPage: React.FC<Props> = ({
       <AITradeSignalCard
         report={analysis}
         scanning={analyzing}
-        dataUnavailable={!marketQ.data?.candles?.length}
+        dataUnavailable={!marketData?.candles?.length || isStaleData}
         symbol={symbol}
         timeframe={timeframe}
         decimals={decimals}
@@ -483,18 +571,20 @@ export const DashboardPage: React.FC<Props> = ({
       {/* Main Chart + Side Indicator & Session Panel */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
         <div className="xl:col-span-3">
-          {marketQ.isLoading ? (
+          {isLoadingMarket ? (
             <div className="h-[460px] rounded-xl border border-terminal-border bg-terminal-panel flex items-center justify-center text-sm text-terminal-muted">
               Loading market data...
             </div>
           ) : (
             <CandlestickChart
-              candles={marketQ.data?.candles || []}
+              candles={marketData?.candles || []}
               overview={overview}
-              overlays={marketQ.data?.overlays}
+              overlays={marketData?.overlays}
               analysis={analysis}
               theme={theme}
               decimals={decimals}
+              chartSettings={chartSettings}
+              onChangeChartSettings={setChartSettings}
             />
           )}
         </div>
@@ -582,7 +672,7 @@ export const DashboardPage: React.FC<Props> = ({
           <Brain className="w-7 h-7 text-sky-400 mx-auto opacity-80" />
           <h3 className="text-sm font-semibold">Ready for Quantitative & AI Trade Evaluation</h3>
           <p className="text-xs text-terminal-muted max-w-xl mx-auto">
-            Click <strong>ANALYZE MARKET</strong> once valid market data is loaded to scan for qualified BUY/SELL setups, beginner-friendly explanations, entry/SL/TP levels, and multi-timeframe confirmation.
+            Click <strong>ANALYZE MARKET</strong> (or keep Auto-Update enabled) once valid market data is loaded to scan for qualified BUY/SELL setups, beginner-friendly explanations, entry/SL/TP levels, and multi-timeframe confirmation.
           </p>
         </div>
       )}

@@ -35,8 +35,37 @@ export interface InstrumentSpec {
   min_lot: number
   lot_step: number
   typical_spread?: number | null
+  provider_symbols?: Record<string, string>
+  supported_providers?: string[]
   specs_complete: boolean
   is_custom: boolean
+}
+
+export type MarketCategory =
+  | 'all'
+  | 'favorites'
+  | 'forex'
+  | 'crypto'
+  | 'commodities'
+  | 'indices'
+  | 'stocks'
+
+export interface ChartOverlaySettings {
+  showEma20: boolean
+  showEma50: boolean
+  showEma200: boolean
+  showLevels: boolean
+  showTradeLines: boolean
+}
+
+export interface ProviderCapability {
+  name: string
+  configured: boolean
+  supports_live: boolean
+  supports_historical: boolean
+  supported_timeframes: Timeframe[]
+  supported_symbols: string[]
+  notes: string
 }
 
 export interface OHLCVCandle {

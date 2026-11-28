@@ -40,6 +40,7 @@ async def run_full_analysis(
     timeframe: Timeframe,
     provider_override: Optional[str] = None,
     allow_demo: bool = False,
+    limit: int = 300,
     paper_account: Optional[PaperAccountSummary] = None,
     news_blackout_active: bool = False,
     news_blackout_reason: str = "",
@@ -57,7 +58,7 @@ async def run_full_analysis(
         symbol=norm_symbol,
         timeframe=timeframe,
         provider_override=provider_override or settings.data_provider,
-        limit=300,
+        limit=limit,
         allow_demo=allow_demo,
     )
     candles = primary_resp.candles

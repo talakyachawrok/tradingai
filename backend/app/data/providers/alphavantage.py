@@ -27,6 +27,11 @@ class AlphaVantageProvider(MarketDataProvider):
 
     def capabilities(self) -> ProviderCapability:
         settings = get_settings()
+        supported = [
+            inst.symbol
+            for inst in instrument_registry.list_instruments()
+            if "alphavantage" in inst.supported_providers or "alphavantage" in inst.provider_symbols
+        ]
         return ProviderCapability(
             name=self.name,
             configured=bool(settings.alphavantage_api_key.strip()),
@@ -40,8 +45,8 @@ class AlphaVantageProvider(MarketDataProvider):
                 Timeframe.H1,
                 Timeframe.D1,
             ],
-            supported_symbols=["EURUSD", "GBPUSD", "XAUUSD", "BTCUSD"],
-            notes="Requires ALPHAVANTAGE_API_KEY. 3m and 4h timeframes are unavailable natively.",
+            supported_symbols=supported,
+            notes="Requires ALPHAVANTAGE_API_KEY. Supports Forex & USD Crypto. 3m and 4h timeframes are unavailable natively.",
         )
 
     async def fetch_candles(

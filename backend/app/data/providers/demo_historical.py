@@ -3,7 +3,7 @@
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List
-from app.core.instruments import normalize_symbol
+from app.core.instruments import instrument_registry, normalize_symbol
 from app.data.base import MarketDataProvider, ProviderFetchResult
 from app.models.market import TIMEFRAME_SECONDS, DataConnectionStatus, ProviderCapability, Timeframe
 
@@ -35,7 +35,7 @@ class DemoHistoricalProvider(MarketDataProvider):
             supports_live=False,
             supports_historical=True,
             supported_timeframes=list(Timeframe),
-            supported_symbols=list(BASE_SPECS.keys()),
+            supported_symbols=[i.symbol for i in instrument_registry.list_instruments()],
             notes="Static historical sample dataset ending 2026-02-15 UTC. Never represents live prices.",
         )
 
@@ -43,7 +43,20 @@ class DemoHistoricalProvider(MarketDataProvider):
         self, symbol: str, timeframe: Timeframe, limit: int = 300
     ) -> ProviderFetchResult:
         norm = normalize_symbol(symbol)
-        spec = BASE_SPECS.get(norm, {"base": 100.0, "step": 0.5, "vol": 1000.0, "decimals": 2})
+        inst = instrument_registry.get(norm)
+        default_base = (
+            1.10 if inst and inst.asset_class == "forex" else (250.0 if inst and inst.asset_class == "stocks" else 100.0)
+        )
+        default_step = 0.0008 if inst and inst.asset_class == "forex" else (1.5 if default_base > 100 else 0.5)
+        spec = BASE_SPECS.get(
+            norm,
+            {
+                "base": default_base,
+                "step": default_step,
+                "vol": 1000.0,
+                "decimals": float(inst.decimals if inst else 2),
+            },
+        )
         candles = self._build_historical_series(
             symbol=norm,
             timeframe=timeframe,
