@@ -48,7 +48,7 @@ export const CandlestickChart: React.FC<Props> = ({
 
     const isDark = theme === 'dark'
     const chart = createChart(el, {
-      width: el.clientWidth,
+      width: Math.max(el.clientWidth, 320),
       height: 460,
       layout: {
         background: { type: ColorType.Solid, color: isDark ? '#101624' : '#ffffff' },

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.data.manager import MarketDataManager
+from app.data.providers.binance_public import BinancePublicProvider
 from app.data.providers.twelvedata import TwelveDataProvider, resolve_twelvedata_symbol
 from app.database.connection import db_store
 from app.main import app
@@ -198,3 +199,52 @@ def test_provider_connection_endpoint_and_stale_analysis_refusal(monkeypatch):
             json={"symbol": "XAUUSD", "timeframe": "1h", "allow_demo": False},
         )
         assert ana.status_code == 422
+
+        # Verify CORS allows Vercel frontend origins cleanly
+        cors_resp = client.options(
+            "/api/health",
+            headers={
+                "Origin": "https://ai-trading-analyzer-ui.vercel.app",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert cors_resp.status_code == 200
+        assert cors_resp.headers.get("access-control-allow-origin") == "https://ai-trading-analyzer-ui.vercel.app"
+
+
+@pytest.mark.asyncio
+async def test_binance_451_geo_fallback_to_kraken(monkeypatch):
+    provider = BinancePublicProvider()
+
+    class _ClientGeo451:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, params=None):
+            if "binance" in url:
+                return _MockResponse(451, {"msg": "Restricted location"})
+            return _MockResponse(
+                200,
+                {
+                    "error": [],
+                    "result": {
+                        "XXBTZUSD": [
+                            [1700000000 + i * 3600, "95000", "95500", "94800", "95200", "95100", "12.5", 100]
+                            for i in range(5)
+                        ],
+                        "last": 1700018000,
+                    },
+                },
+            )
+
+    monkeypatch.setattr(httpx, "AsyncClient", _ClientGeo451)
+    res = await provider.fetch_candles("BTCUSD", Timeframe.H1, limit=5)
+    assert res.connection_status == DataConnectionStatus.LIVE
+    assert "kraken_public" in res.provider_name
+    assert len(res.raw_candles) == 5

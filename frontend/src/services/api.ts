@@ -1,3 +1,4 @@
+import { API_BASE_URL, buildApiUrl } from '../config/apiConfig'
 import type {
   BacktestResult,
   InstrumentSpec,
@@ -13,16 +14,24 @@ import type {
   WebhookLogRecord,
 } from '../types/trading'
 
-const API_BASE = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+export const API_BASE = API_BASE_URL
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(init?.headers || {}),
-    },
-    ...init,
-  })
+  let res: Response
+  try {
+    res = await fetch(buildApiUrl(path), {
+      headers: {
+        ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(init?.headers || {}),
+      },
+      ...init,
+    })
+  } catch (err: any) {
+    const target = API_BASE || 'local backend proxy'
+    throw new Error(
+      `Network error connecting to ${target}. If using Render free tier, the server may be waking up—wait 20-30s and retry. (${err?.message || 'fetch failed'})`
+    )
+  }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
     try {

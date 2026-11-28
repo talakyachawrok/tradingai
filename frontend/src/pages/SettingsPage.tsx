@@ -90,6 +90,16 @@ export const SettingsPage: React.FC<Props> = ({ theme, onToggleTheme }) => {
         </div>
       )}
 
+      {(settingsQ.isError || providersQ.isError) && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-rose-300 flex items-center gap-2">
+          <XCircle className="w-4 h-4 shrink-0" />
+          <span>
+            Unable to load backend settings:{' '}
+            {((settingsQ.error || providersQ.error) as Error)?.message || 'Backend unreachable'}
+          </span>
+        </div>
+      )}
+
       {/* Environment & Provider Connection Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 text-xs">
         <div className="rounded-xl border border-terminal-border bg-terminal-panel p-4 space-y-3">

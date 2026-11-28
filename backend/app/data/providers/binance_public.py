@@ -1,4 +1,4 @@
-"""Binance public REST market data adapter (supports BTCUSD via BTCUSDT without API key)."""
+"""Public Crypto Spot REST market data adapter (Binance Global -> Binance.US / Kraken fallback for US servers)."""
 
 import time
 from typing import Dict
@@ -20,12 +20,29 @@ BINANCE_INTERVALS: Dict[Timeframe, str] = {
     Timeframe.D1: "1d",
 }
 
+KRAKEN_INTERVALS: Dict[Timeframe, int] = {
+    Timeframe.M1: 1,
+    Timeframe.M5: 5,
+    Timeframe.M15: 15,
+    Timeframe.M30: 30,
+    Timeframe.H1: 60,
+    Timeframe.H4: 240,
+    Timeframe.D1: 1440,
+}
+
 
 class BinancePublicProvider(MarketDataProvider):
-    """Public Binance Spot API adapter for crypto pairs (e.g. BTCUSD -> BTCUSDT)."""
+    """
+    Public Spot REST adapter for crypto pairs (BTCUSD).
+    Uses Binance Global (`api.binance.com`), automatically falling back to
+    Binance.US (`api.binance.us`) and Kraken (`api.kraken.com`) if the host
+    region (such as Render US servers) receives HTTP 451 geo-restrictions.
+    """
 
     name = "binance_public"
-    BASE_URL = "https://api.binance.com/api/v3/klines"
+    GLOBAL_URL = "https://api.binance.com/api/v3/klines"
+    US_URL = "https://api.binance.us/api/v3/klines"
+    KRAKEN_URL = "https://api.kraken.com/0/public/OHLC"
 
     def capabilities(self) -> ProviderCapability:
         return ProviderCapability(
@@ -35,7 +52,7 @@ class BinancePublicProvider(MarketDataProvider):
             supports_historical=True,
             supported_timeframes=list(BINANCE_INTERVALS.keys()),
             supported_symbols=["BTCUSD"],
-            notes="Public REST klines for BTCUSD (BTCUSDT) across all 8 timeframes. No API key required.",
+            notes="Public REST klines for BTCUSD (auto-falls back to Binance.US / Kraken on HTTP 451 regions). No API key required.",
         )
 
     async def fetch_candles(
@@ -59,59 +76,99 @@ class BinancePublicProvider(MarketDataProvider):
                 error_message=f"Timeframe {timeframe.value} is not supported.",
             )
 
-        try:
-            logger.info("Fetching Binance public klines symbol=%s interval=%s limit=%s", mapped, interval, limit)
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    self.BASE_URL,
-                    params={"symbol": mapped, "interval": interval, "limit": min(limit, 1000)},
-                )
-            if resp.status_code == 429:
-                logger.warning("Binance HTTP 429 rate limit exceeded")
+        last_error = ""
+        for endpoint_url in (self.GLOBAL_URL, self.US_URL):
+            try:
+                logger.info("Fetching %s symbol=%s interval=%s limit=%s", endpoint_url, mapped, interval, limit)
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(
+                        endpoint_url,
+                        params={"symbol": mapped, "interval": interval, "limit": min(limit, 1000)},
+                    )
+                if resp.status_code == 451:
+                    last_error = f"{endpoint_url} geo-restricted (HTTP 451)"
+                    logger.warning("%s; trying next crypto public fallback", last_error)
+                    continue
+                if resp.status_code == 429:
+                    return ProviderFetchResult(
+                        provider_name=self.name,
+                        connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
+                        error_message="Binance API rate limit reached (HTTP 429).",
+                    )
+                if resp.status_code == 400:
+                    return ProviderFetchResult(
+                        provider_name=self.name,
+                        connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
+                        error_message=f"Binance rejected symbol or interval ({mapped}, {interval}).",
+                    )
+                resp.raise_for_status()
+                rows = resp.json()
+                candles = [
+                    {
+                        "timestamp": int(row[0]),
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": float(row[5]),
+                    }
+                    for row in rows
+                ]
+                logger.info("Fetched %d candles from %s for %s (%s)", len(candles), endpoint_url, mapped, interval)
                 return ProviderFetchResult(
                     provider_name=self.name,
-                    connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
-                    error_message="Binance API rate limit reached (HTTP 429).",
+                    connection_status=DataConnectionStatus.LIVE,
+                    raw_candles=candles,
                 )
-            if resp.status_code == 400:
-                return ProviderFetchResult(
-                    provider_name=self.name,
-                    connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
-                    error_message=f"Binance rejected symbol or interval ({mapped}, {interval}).",
-                )
-            resp.raise_for_status()
-            rows = resp.json()
-            candles = [
-                {
-                    "timestamp": int(row[0]),
-                    "open": float(row[1]),
-                    "high": float(row[2]),
-                    "low": float(row[3]),
-                    "close": float(row[4]),
-                    "volume": float(row[5]),
-                }
-                for row in rows
-            ]
-            logger.info("Binance fetched %d candles for %s (%s)", len(candles), mapped, interval)
-            return ProviderFetchResult(
-                provider_name=self.name,
-                connection_status=DataConnectionStatus.LIVE,
-                raw_candles=candles,
-            )
-        except httpx.TimeoutException:
-            logger.error("Binance API timeout for %s (%s)", mapped, interval)
-            return ProviderFetchResult(
-                provider_name=self.name,
-                connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
-                error_message="Binance public API timed out.",
-            )
-        except Exception as exc:
-            logger.error("Binance API error: %s", exc)
-            return ProviderFetchResult(
-                provider_name=self.name,
-                connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
-                error_message=f"Binance public API unreachable: {exc}",
-            )
+            except httpx.TimeoutException:
+                last_error = f"{endpoint_url} timed out"
+                logger.warning(last_error)
+            except Exception as exc:
+                last_error = f"{endpoint_url} error: {exc}"
+                logger.warning(last_error)
+
+        # Fallback to Kraken public OHLC (works globally, including US Render servers)
+        kraken_interval = KRAKEN_INTERVALS.get(timeframe)
+        if kraken_interval is not None:
+            try:
+                logger.info("Falling back to Kraken public OHLC for BTCUSD interval=%sm", kraken_interval)
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(
+                        self.KRAKEN_URL,
+                        params={"pair": "XBTUSD", "interval": kraken_interval},
+                    )
+                resp.raise_for_status()
+                payload = resp.json()
+                if not payload.get("error"):
+                    result = payload.get("result", {})
+                    pair_key = next((k for k in result.keys() if k != "last"), None)
+                    if pair_key:
+                        rows = result[pair_key][-limit:]
+                        candles = [
+                            {
+                                "timestamp": int(row[0]) * 1000,
+                                "open": float(row[1]),
+                                "high": float(row[2]),
+                                "low": float(row[3]),
+                                "close": float(row[4]),
+                                "volume": float(row[6]),
+                            }
+                            for row in rows
+                        ]
+                        logger.info("Kraken fetched %d candles for BTCUSD (%s)", len(candles), timeframe.value)
+                        return ProviderFetchResult(
+                            provider_name="kraken_public (binance fallback)",
+                            connection_status=DataConnectionStatus.LIVE,
+                            raw_candles=candles,
+                        )
+            except Exception as exc:
+                last_error = f"{last_error} | Kraken fallback error: {exc}"
+
+        return ProviderFetchResult(
+            provider_name=self.name,
+            connection_status=DataConnectionStatus.DATA_UNAVAILABLE,
+            error_message=f"Crypto public API unreachable: {last_error}",
+        )
 
     async def test_connection(
         self, symbol: str = "BTCUSD", timeframe: Timeframe = Timeframe.H1
@@ -126,7 +183,7 @@ class BinancePublicProvider(MarketDataProvider):
                 provider_name=self.name,
                 connected=True,
                 status="CONNECTED",
-                message="Connected to Binance Public Spot API (BTCUSDT).",
+                message=f"Connected to {res.provider_name} for {test_sym}.",
                 tested_symbol=test_sym,
                 tested_timeframe=timeframe.value,
                 latency_ms=latency,
@@ -139,10 +196,10 @@ class BinancePublicProvider(MarketDataProvider):
             provider_name=self.name,
             connected=False,
             status="ERROR",
-            message=res.error_message or "Binance public API unreachable.",
+            message=res.error_message or "Crypto public API unreachable.",
             tested_symbol=test_sym,
             tested_timeframe=timeframe.value,
             latency_ms=latency,
             requires_api_key=False,
-            subscription_notes="Check internet connectivity or firewall access to api.binance.com.",
+            subscription_notes="Check internet connectivity or provider access.",
         )
